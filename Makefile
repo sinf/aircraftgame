@@ -1,5 +1,5 @@
 
-OPTIONS=-g -O1 -DMAIN -DUSE_SDL `sdl-config --cflags`
+OPTIONS=-g -O0 -DMAIN -DUSE_SDL `sdl-config --cflags`
 WARNINGS=-Wall -Wextra
 LIBS=-lX11 `sdl-config --libs` -lm -lGL
 #LIBS=-lGL `sdl-config --libs` -lm -ldl
@@ -12,5 +12,6 @@ all: $(TARGET)
 clean:
 	rm -f $(TARGET)
 
-$(TARGET): $(SOURCES)
+$(TARGET): $(SOURCES) $(shell echo code/*.h)
 	gcc $(WARNINGS) $(OPTIONS) $(SOURCES) $(LIBS) -o $@
+

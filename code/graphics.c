@@ -204,6 +204,33 @@ static void draw_grid( Real off_x, Real off_y )
 }
 #endif
 
+static void draw_water( const Water w[1], S32 eye_x, S32 eye_y )
+{
+	S32 verts[(WATER_RESOL+1)*2*2];
+	S32 offset_y = eye_y + REALF( W_WATER_LEVEL );
+	S32 bottom = offset_y + REALF( 50.0 );
+	unsigned n;
+	S32 pos_x = eye_x;
+	
+	for( n=0; n<WATER_RESOL; n++ ) {
+		unsigned n4 = n * 4;
+		verts[n4] = pos_x;
+		verts[n4+1] = w->z[n] + offset_y;
+		verts[n4+2] = pos_x;
+		verts[n4+3] = bottom;
+		pos_x += REALF( WATER_ELEM_SPACING );
+	}
+	
+	verts[4*WATER_RESOL+0] = pos_x;
+	verts[4*WATER_RESOL+1] = verts[1];
+	verts[4*WATER_RESOL+2] = pos_x;
+	verts[4*WATER_RESOL+3] = bottom;
+	
+	glColor4ub( 0, 0, 255, 64 );
+	glVertexPointer( 2, GL_INT, 0, verts );
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 2*WATER_RESOL+2 );
+}
+
 void render_world( int pass, Real eye_x_offset )
 {
 	unsigned n;
@@ -310,15 +337,21 @@ void render_world( int pass, Real eye_x_offset )
 		#endif
 	}
 	
+	#if 1
+	draw_water( &WORLD.water, eye_x, eye_y );
+	#endif
+	
 	#if ENABLE_WIREFRAME
 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 	#endif
 	
+	#if 0
 	/* Draw the sea */
 	draw_bg_rect( eye_x, eye_y,
 		REALF( W_WATER_LEVEL ),
 		REALF( W_WATER_LEVEL+128 ),
 		RGBA_32(  0, 0, 0x80, 0xAF ) );
+	#endif
 	
 	#if ENABLE_GRID
 	draw_grid( eye_x, eye_y );

@@ -80,6 +80,17 @@ struct Thing {
 	ThingData data;
 };
 
+
+#define WATER_T 25
+#define WATER_SPLASH_FORCE 0.3
+#define WATER_RESOL 256
+#define WATER_ELEM_SPACING ((W_WIDTH/(double)WATER_RESOL))
+typedef struct Water {
+	/* 1-D heightmaps relative to W_WATER_LEVEL */
+	Real buffers[3][WATER_RESOL];
+	Real *old_z, *z, *temp; /* these point to buffers */
+} Water;
+
 #define MAX_THINGS 8192
 
 struct World {
@@ -88,6 +99,7 @@ struct World {
 	unsigned num_things;
 	unsigned sorted_things[MAX_THINGS]; /* Thing indexes; Sorted by X coordinate for efficient collision testing */
 	Thing things[MAX_THINGS];
+	Water water;
 };
 
 extern struct World WORLD;

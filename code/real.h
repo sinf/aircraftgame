@@ -18,6 +18,7 @@ typedef S32 DReal;
 #endif
 
 #define REAL_FRACT_BITS 8
+#define REAL_FRACT_PART( x ) ((x) & (1<<REAL_FRACT_BITS)-1)
 
 #define REAL_VEC( x, y ) {REALF(x), REALF(y)} /* Converts 2 floats/ints -> Vec2 */
 #define REALF(f) ((Real)((f) * (1<<REAL_FRACT_BITS))) /* Converts float -> Real */

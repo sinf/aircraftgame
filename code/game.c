@@ -6,7 +6,7 @@
 
 #define ENABLE_GODMODE 0
 
-World WORLD;
+World WORLD = {0};
 
 static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent );
 static void remove_thing( Thing *t );
@@ -40,6 +40,10 @@ void init_world( void )
 	add_gunship();
 	add_battleship();
 	#endif
+	
+	WORLD.water.z = WORLD.water.buffers[0];
+	WORLD.water.old_z = WORLD.water.buffers[1];
+	WORLD.water.temp = WORLD.water.buffers[2];
 }
 
 static void *list_append( void *list_base, unsigned *num_items, unsigned item_size )
@@ -142,6 +146,10 @@ static void add_water_splash( Vec2 pos )
 			add_particle( pos, 6, 16, PT_WATER2 );
 		}
 	}
+	
+	n = pos.x / REALF( WATER_ELEM_SPACING );
+	n %= WATER_RESOL;
+	WORLD.water.z[n] += REALF( WATER_SPLASH_FORCE );
 }
 
 static void add_smoke( Vec2 pos )
@@ -437,10 +445,61 @@ static void spawn_enemies( void )
 	}
 }
 
+static void update_water( Water w[1] )
+{
+	Real *old_z, *cur_z, *new_z;
+	Real left, mid, right;
+	double c0 = WATER_T * W_TIMESTEP / WATER_ELEM_SPACING;
+	Real c = REALF( c0 * c0 );
+	unsigned n;
+	
+	old_z = w->old_z;
+	cur_z = w->z;
+	new_z = w->temp;
+	
+	w->old_z = cur_z;
+	w->z = new_z;
+	w->temp = old_z;
+	
+	mid = cur_z[WATER_RESOL-1];
+	right = cur_z[0];
+	
+	for( n=0; n<WATER_RESOL; n++ )
+	{
+		left = mid;
+		mid = right;
+		right = cur_z[(1+n)%WATER_RESOL];
+		
+		new_z[n] = 2*mid - old_z[n] + REAL_MUL( c, left + right - 2*mid );
+		new_z[n] = REAL_MUL( REALF( 0.99999 ), new_z[n] );
+		
+		/*
+		new_z[n] = 2 * mid - old_z[n] + REAL_MUL( WATER_T, ( left + right - 2 * mid ) / 2 );
+		*/
+	}
+}
+
+static Real get_water_height( Real x )
+{
+	Water *w = &WORLD.water;
+	Real h0, h1, t;
+	int cell;
+	
+	cell = REALTOI( x );
+	cell = ( cell + WATER_RESOL ) % WATER_RESOL;
+	h0 = w->z[cell];
+	h1 = w->z[cell];
+	
+	t = REAL_FRACT_PART( x );
+	return REALF( W_WATER_LEVEL ) + h0 + REAL_MUL( t, h1 - h0 );
+}
+
 /* This function should handle everything that depends on time */
 void update_world( void )
 {
 	unsigned n;
+	
+	update_water( &WORLD.water );
 	for( n=0; n<WORLD.num_things; n++ )
 	{
 		Thing *t = WORLD.things + n;
@@ -451,7 +510,7 @@ void update_world( void )
 		
 		t->age += REALF( W_TIMESTEP );
 		
-		if ( t->pos.y > REALF( W_WATER_LEVEL ) )
+		if ( t->pos.y > get_water_height( t->pos.x ) )
 		{
 			t->underwater_time += REALF( W_TIMESTEP );
 			t->accel.y = REALF( W_WATER_BUOANCY );
@@ -483,7 +542,10 @@ void update_world( void )
 			case T_GUNSHIP:
 			case T_BATTLESHIP:
 				/* Prevent ships from sinking */
-				t->pos.y = REALF( W_WATER_LEVEL );
+				/*t->pos.y = REALF( W_WATER_LEVEL );*/
+				
+				t->pos.y = get_water_height( t->pos.x );
+				
 				t->vel.y = 0;
 				t->accel.y = 0;
 				break;
@@ -579,7 +641,7 @@ void update_world( void )
 					{
 						Vec2 pos;
 						pos.x = t->pos.x - 1024 + ( MWC() & 0x7FF );
-						pos.y = REALF( W_WATER_LEVEL );
+						pos.y = get_water_height( t->pos.x );
 						add_water_splash( pos );
 					}
 				}
