@@ -17,15 +17,12 @@
 #define ENABLE_GRID ENABLE_WIREFRAME
 
 static const float MATRIX_DATA[2*16] = {
-	#define MAT_IDENTITY MATRIX_DATA
-	#define MAT_PROJECTION (MATRIX_DATA+16)
-	
 	1, 0, 0, 0,
 	0, 1, 0, 0,
 	0, 0, 1, 0,
 	0, 0, 0, 1,
 	
-	/* The projection matrix is pre-scaled so that the Real type can be passed to GL as-is */
+	/* The projection matrix is pre-scaled so that values of type Real can be passed to GL without any conversions */
 	#define COORD_SCALE ( 1.0f / (1<<REAL_FRACT_BITS) )
 	
 	#define P_SCREEN_RATIO ((float)SCREEN_H/(float)SCREEN_W)
@@ -43,6 +40,8 @@ static const float MATRIX_DATA[2*16] = {
 	0, 0, -1.0 / ( P_FAR - P_NEAR ) * COORD_SCALE, 0,
 	-( P_RIGHT + P_LEFT ) / ( P_RIGHT - P_LEFT ), -( P_TOP + P_BOTTOM ) / ( P_TOP - P_BOTTOM ), -P_NEAR / ( P_FAR - P_NEAR ), 1
 };
+static const float const *MAT_IDENTITY = MATRIX_DATA;
+static const float const *MAT_PROJECTION = MATRIX_DATA + 16;
 
 static void draw_bg_rect( Real tx, Real ty, Real top, Real bottom, U32 color )
 {

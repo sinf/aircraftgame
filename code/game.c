@@ -98,6 +98,7 @@ static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 	thing->hp = hp;
 	thing->id = ++next_thing_id;
 	thing->pos = pos;
+	thing->buoancy = REALF( W_WATER_BUOANCY );
 	
 	if ( parent )
 	{
@@ -311,6 +312,8 @@ static void shoot_projectile( Thing *t, float angle )
 		p->data.pr.owned_by_player = ( t == WORLD.player );
 		/* p->data.pr.owner = t->id; */
 		
+		p->buoancy = REALF( PROJECTILE_BUOANCY );
+		
 		if ( t == WORLD.player )
 			test_audio();
 	}
@@ -509,6 +512,26 @@ static Real get_water_height( Real x )
 	return REALF( W_WATER_LEVEL ) + h0 + REAL_MUL( t, h1 - h0 );
 }
 
+static Real get_avg_water_height( Real x0, Real x1, unsigned samples )
+{
+	Real x = x0;
+	Real dx = ( x1 - x0 ) / samples;
+	Real h = 0;
+	while( x < x1 ) {
+		h += get_water_height( x );
+		x += dx;
+	}
+	return h / samples;
+}
+
+static Real measure_water_surface_angle( Real mid_x )
+{
+	unsigned s = 4;
+	Real r = REALF( 5.0 );
+	float a = atan2f( get_avg_water_height( mid_x + r, mid_x + 2 * r, s ) - get_avg_water_height( mid_x - 2 * r, mid_x - r, s ), r );
+	return REALF( a );
+}
+
 /* This function should handle everything that depends on time */
 void update_world( void )
 {
@@ -532,16 +555,16 @@ void update_world( void )
 		if ( t->pos.y > water_h )
 		{
 			t->underwater_time += REALF( W_TIMESTEP );
-			t->accel.y = REALF( W_WATER_BUOANCY );
+			t->accel.y -= t->buoancy;
+			t->vel.x = REAL_MUL( t->vel.x, REALF( 0.97 ) );
+			t->vel.y = REAL_MUL( t->vel.y, REALF( 0.97 ) );
 			
-			if ( t->type != T_PARTICLE )
-			{
+			if ( t->type != T_PARTICLE ) {
 				if ( t->pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
 					t->hp = 0;
 				
 				add_water_splash( t->pos, t->vel.y );
-			}
-			else {
+			} else {
 				t->pos.y = water_h;
 			}
 		}
@@ -569,13 +592,7 @@ void update_world( void )
 			
 			case T_GUNSHIP:
 			case T_BATTLESHIP:
-				/* Prevent ships from sinking */
-				/*t->pos.y = REALF( W_WATER_LEVEL );*/
-				
-				t->pos.y = get_water_height( t->pos.x );
-				
-				t->vel.y = 0;
-				t->accel.y = 0;
+				t->angle = measure_water_surface_angle( t->pos.x );
 				break;
 			
 			case T_AAGUN:
@@ -596,8 +613,10 @@ void update_world( void )
 				break;
 			
 			case T_PROJECTILE:
+				/*
 				if ( t->underwater_time )
 					t->hp = 0;
+				*/
 				collide_projectile( t );
 				break;
 			
@@ -631,10 +650,26 @@ void update_world( void )
 			}
 			else
 			{
+				float m0, m1, m2, m3;
+				float rx, ry;
+				float a = REALTOF( t->parent->angle );
+				Vec2 rw_pos; /* relative position in world space */
+				
+				m0 = cosf( a );
+				m1 = sinf( a );
+				m2 = -m1;
+				m3 = m0;
+				
+				rx = t->rel_pos.x;
+				ry = t->rel_pos.y;
+				
+				rw_pos.x = rx * m0 + ry * m2;
+				rw_pos.y = rx * m1 + ry * m3;
+				
 				/* Follow parent */
 				t->pos = t->parent->pos;
-				t->pos.x += t->rel_pos.x;
-				t->pos.y += t->rel_pos.y;
+				t->pos.x += rw_pos.x;
+				t->pos.y += rw_pos.y;
 				t->vel = t->parent->vel;
 				t->accel = t->parent->accel;
 			}

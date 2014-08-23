@@ -78,13 +78,19 @@ struct Thing {
 	Vec2 rel_pos; /* Relative position to parent */
 	U32 age; /* unsigned Real; seconds */
 	U32 underwater_time;
+	Real buoancy;
 	ThingData data;
 };
 
+/* How to fix the physics:
+- Thing needs to have mass. Higher mass reduces velocity damping in water
+- Thing needs some aerodynamics information for more accurate air/water friction
+- Thing needs a buoancy factor. Some things float more easily (boat vs cannon ball)
+*/
 
 #define WATER_T 17
 #define WATER_DAMPING_FACTOR 0.99
-#define WATER_SPLASH_FORCE 0.01
+#define WATER_SPLASH_FORCE 0.004
 #define WATER_SPLASH_FORCE_EXPL 8.0
 #define WATER_RESOL 256
 #define WATER_ELEM_SPACING ((W_WIDTH/(double)WATER_RESOL))
@@ -117,7 +123,7 @@ extern struct World WORLD;
 #define W_GRAVITY 9.81f
 
 #define W_WATER_LEVEL 20.0f /* Water y coordinate */
-#define W_WATER_BUOANCY -10.0f
+#define W_WATER_BUOANCY 25.0f
 #define W_WATER_DEATH_LEVEL (W_WATER_LEVEL+15)
 
 /* Time interval between enemy wave spawns (in seconds) */
@@ -131,6 +137,7 @@ extern struct World WORLD;
 
 #define PROJECTILE_VEL 64.0f
 #define PROJECTILE_DAMAGE 24
+#define PROJECTILE_BUOANCY 5
 
 #define MAX_UNDERWATER_VEL 0.4f
 #define MAX_THING_HP 80
