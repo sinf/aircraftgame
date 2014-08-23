@@ -68,6 +68,7 @@ struct Thing {
 	ThingType type;
 	ThingID id; /* unique thing ID, never the same */
 	Real hp;
+	Vec2 old_pos;
 	Vec2 pos;
 	Vec2 vel;
 	Vec2 accel;
@@ -81,8 +82,10 @@ struct Thing {
 };
 
 
-#define WATER_T 25
-#define WATER_SPLASH_FORCE 0.4
+#define WATER_T 17
+#define WATER_DAMPING_FACTOR 0.99
+#define WATER_SPLASH_FORCE 0.01
+#define WATER_SPLASH_FORCE_EXPL 8.0
 #define WATER_RESOL 256
 #define WATER_ELEM_SPACING ((W_WIDTH/(double)WATER_RESOL))
 typedef struct Water {

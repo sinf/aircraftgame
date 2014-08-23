@@ -4,7 +4,8 @@
 #define _GAME_INTERNALS
 #include "game.h"
 
-#define ENABLE_GODMODE 0
+#define ENABLE_GODMODE 1
+#define ENABLE_ENEMY_AIRCRAFT 0
 
 World WORLD = {0};
 
@@ -13,9 +14,10 @@ static void remove_thing( Thing *t );
 static Thing *add_aircraft( void );
 static Thing *add_gunship( void );
 static Thing *add_battleship( void );
-static void add_water_splash( Vec2 pos );
+static void add_water_splash( Vec2 pos, Real vel_y );
 static void add_smoke( Vec2 pos );
 static void add_explosion( Vec2 pos, Real vel_x, Real vel_y );
+static Real get_water_height( Real x );
 
 /* ***************************************************************** */
 /* ***************************************************************** */
@@ -132,24 +134,28 @@ static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type 
 	}
 }
 
-static void add_water_splash( Vec2 pos )
+static void add_water_splash( Vec2 pos, Real vel_y )
 {
 	int n;
-	for( n=0; n<10; n++ )
-	{
-		/* Add small drops (10) */
-		add_particle( pos, 8, 4, PT_WATER1 );
-		
-		if ( n & 1 )
+	Real wh = get_water_height( pos.x );
+	
+	if ( abs( pos.y - wh ) < REALF( 1.0 ) && abs( vel_y ) > REALF( 4 ) ) {
+		for( n=0; n<10; n++ )
 		{
-			/* Add 'fog' (5) */
-			add_particle( pos, 6, 16, PT_WATER2 );
+			/* Add small drops (10) */
+			add_particle( pos, 8, 4, PT_WATER1 );
+		
+			if ( n & 1 )
+			{
+				/* Add 'fog' (5) */
+				add_particle( pos, 6, 16, PT_WATER2 );
+			}
 		}
 	}
 	
 	n = pos.x / REALF( WATER_ELEM_SPACING );
 	n %= WATER_RESOL;
-	WORLD.water.z[n] += REALF( WATER_SPLASH_FORCE );
+	WORLD.water.z[n] += REAL_MUL( vel_y, REALF( WATER_SPLASH_FORCE ) );
 }
 
 static void add_smoke( Vec2 pos )
@@ -414,13 +420,22 @@ static void do_enemy_aircraft_logic( Thing *self )
 	self->data.ac.gun_trigger = ( WORLD.player != NULL ) && !( prng_next() & 0xFF );
 }
 
+#if !ENABLE_ENEMY_AIRCRAFT
+static Thing *get_null( void ) { return NULL; }
+#endif
+
 static void spawn_enemies( void )
 {
 	typedef Thing *(*SpawnFunc)( void );
 	
 	SpawnFunc spawn_funcs[] = {
+		#if ENABLE_ENEMY_AIRCRAFT
 		add_aircraft,
 		add_aircraft,
+		#else
+		get_null,
+		get_null,
+		#endif
 		add_gunship,
 		add_battleship
 	};
@@ -471,7 +486,7 @@ static void update_water( Water w[1] )
 		right = cur_z[(1+n)%WATER_RESOL];
 		
 		new_z[n] = 2*mid - old_z[n] + REAL_MUL( c, left + right - 2*mid );
-		new_z[n] = REAL_MUL( REALF( 0.99999 ), new_z[n] );
+		new_z[n] = REAL_MUL( REALF( WATER_DAMPING_FACTOR ), new_z[n] );
 		
 		/*
 		new_z[n] = 2 * mid - old_z[n] + REAL_MUL( WATER_T, ( left + right - 2 * mid ) / 2 );
@@ -504,6 +519,7 @@ void update_world( void )
 	{
 		Thing *t = WORLD.things + n;
 		Real water_h;
+		Vec2 orig_pos = t->pos;
 		
 		/* Reset acceleration */
 		t->accel.x = 0;
@@ -523,8 +539,7 @@ void update_world( void )
 				if ( t->pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
 					t->hp = 0;
 				
-				if ( t->vel.y > REALF( 25.0f ) )
-					add_water_splash( t->pos );
+				add_water_splash( t->pos, t->vel.y );
 			}
 			else {
 				t->pos.y = water_h;
@@ -532,6 +547,13 @@ void update_world( void )
 		}
 		else
 		{
+			if ( t->old_pos.y > water_h ) {
+				if ( t->type != T_PARTICLE ) {
+					/* Add water splash when an object gets out of the water */
+					add_water_splash( t->pos, 0 );
+				}
+			}
+			
 			t->underwater_time = 0;
 		}
 		
@@ -631,6 +653,8 @@ void update_world( void )
 			WORLD.player->hp = REALF( 100 );
 		#endif
 		
+		t->old_pos = orig_pos;
+		
 		/* Kill things with no HP remaining */
 		if ( t->hp <= 0 )
 		{
@@ -648,7 +672,7 @@ void update_world( void )
 						Vec2 pos;
 						pos.x = t->pos.x - 1024 + ( prng_next() & 0x7FF );
 						pos.y = get_water_height( t->pos.x );
-						add_water_splash( pos );
+						add_water_splash( pos, WATER_SPLASH_FORCE_EXPL );
 					}
 				}
 			}

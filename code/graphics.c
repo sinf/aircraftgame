@@ -7,7 +7,7 @@
 #include "opengl.h"
 
 /* You can see this many game units horizontally on the screen */
-#define HORZ_VISION_RANGE 110.0f
+#define HORZ_VISION_RANGE 90.0f
 
 /* Size of the biggest game object. This value is used for occlusion culling */
 #define LARGEST_OBJECT_RADIUS 5.0
@@ -209,29 +209,47 @@ static void draw_grid( Real off_x, Real off_y )
 
 static void draw_water( const Water w[1], S32 eye_x, S32 eye_y )
 {
-	S32 verts[(WATER_RESOL+1)*2*2];
+	struct {
+		S32 x, y;
+		U32 color;
+	} verts[(WATER_RESOL+1)*2];
+	
+	const unsigned num_verts = (WATER_RESOL+1)*2;
+	const U32 c_surf = RGBA_32( 0, 0, 255, 80 );
+	const U32 c_bottom = RGBA_32( 0, 0, 32, 255 );
+	
 	S32 offset_y = eye_y + REALF( W_WATER_LEVEL );
 	S32 bottom = offset_y + REALF( 50.0 );
 	unsigned n;
 	S32 pos_x = eye_x;
 	
 	for( n=0; n<WATER_RESOL; n++ ) {
-		unsigned n4 = n * 4;
-		verts[n4] = pos_x;
-		verts[n4+1] = w->z[n] + offset_y;
-		verts[n4+2] = pos_x;
-		verts[n4+3] = bottom;
+		unsigned v0 = 2*n, v1 = 2*n+1;
+		verts[v0].x = pos_x;
+		verts[v0].y = w->z[n] + offset_y;
+		verts[v0].color = c_surf;
+		verts[v1].x = pos_x;
+		verts[v1].y = bottom;
+		verts[v1].color = c_bottom;
 		pos_x += REALF( WATER_ELEM_SPACING );
 	}
 	
-	verts[4*WATER_RESOL+0] = pos_x;
-	verts[4*WATER_RESOL+1] = verts[1];
-	verts[4*WATER_RESOL+2] = pos_x;
-	verts[4*WATER_RESOL+3] = bottom;
+	verts[2*WATER_RESOL].x = pos_x;
+	verts[2*WATER_RESOL].y = verts[0].y;
+	verts[2*WATER_RESOL].color = c_surf;
+	
+	verts[2*WATER_RESOL+1].x = pos_x;
+	verts[2*WATER_RESOL+1].y = bottom;
+	verts[2*WATER_RESOL+1].color = c_bottom;
 	
 	glColor4ub( 0, 0, 255, 64 );
-	glVertexPointer( 2, GL_INT, 0, verts );
-	glDrawArrays( GL_TRIANGLE_STRIP, 0, 2*WATER_RESOL+2 );
+	glVertexPointer( 2, GL_INT, sizeof(verts[0]), verts );
+	glColorPointer( 4, GL_UNSIGNED_BYTE, sizeof(verts[0]), &verts[0].color );
+	
+	glEnableClientState( GL_COLOR_ARRAY );
+	
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, num_verts );
+	glDisableClientState( GL_COLOR_ARRAY );
 }
 
 static void draw_sky( Real eye_x, Real eye_y )
@@ -329,8 +347,6 @@ static void render_world_fg( Real eye_x, Real eye_y )
 			draw_crosshair( x, y );
 		#endif
 	}
-	
-	draw_water( &WORLD.water, eye_x, eye_y );
 }
 
 void render( void )
@@ -354,6 +370,9 @@ void render( void )
 	
 	render_world_fg( eye_x + px, eye_y );
 	render_world_fg( eye_x, eye_y );
+	
+	draw_water( &WORLD.water, eye_x, eye_y );
+	draw_water( &WORLD.water, eye_x + px, eye_y );
 	
 	#if ENABLE_WIREFRAME
 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
