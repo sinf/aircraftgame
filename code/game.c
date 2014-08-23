@@ -4,9 +4,9 @@
 #define _GAME_INTERNALS
 #include "game.h"
 
-#define ENABLE_GODMODE 1
-#define ENABLE_ENEMY_AIRCRAFT 0
-#define DISARM_ENEMIES 1
+#define ENABLE_GODMODE 0
+#define ENABLE_ENEMY_AIRCRAFT 1
+#define DISARM_ENEMIES 0
 
 World WORLD = {0};
 
@@ -26,10 +26,8 @@ static void displace_water( Real x, Real delta );
 
 Vec2 sin_cos_add_mul( float t, Vec2 v, float m )
 {
-	float fx, fy;
-	sincosf( t, &fy, &fx );
-	v.x += REALF( fx * m );
-	v.y += REALF( fy * m );
+	v.x += REALF( cosf( t ) * m );
+	v.y += REALF( sinf( t ) * m );
 	return v;
 }
 
@@ -158,7 +156,7 @@ static void add_explosion( Vec2 pos, Real vel_x, Real vel_y )
 		}
 	}
 	
-	displace_water( pos.x, vel_y );
+	displace_water( pos.x, -vel_y );
 }
 
 static Thing *add_aircraft( void )

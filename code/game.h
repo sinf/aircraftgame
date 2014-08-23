@@ -104,7 +104,7 @@ typedef struct Water {
 	Real *old_z, *z, *temp; /* these point to buffers */
 } Water;
 
-#define MAX_THINGS 8192
+#define MAX_THINGS 16536
 
 struct World {
 	Thing *player;

@@ -127,14 +127,18 @@ static int process_events( void )
 }
 #endif
 
-#ifdef MAIN
-int main( void )
-#else
-void _start( void )
-#endif
+__attribute__((externally_visible)) void Main( void )
 {
 	U32 nap = 1000 / GAME_TICKS_PER_SEC;
 	U32 next_frame;
+	
+	extern U64 prng_state[2];
+	prng_state[0] = 0x7c1a2c2a7d8ff9f7;
+	prng_state[1] = 0x2236e6667b6f36a5;
+	
+	/*
+	static U64 s[2] = {362436069, 521288629};
+	*/
 	
 	STATIC_ASSERT( sizeof(U32) == 4 );
 	

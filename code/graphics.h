@@ -1,5 +1,8 @@
-#ifndef _GRAPHICS_H
-#define _GRAPHICS_H
+#ifndef MAT_IDENTITY
+
+extern const float COMMON_MATRICES[2][16];
+#define MAT_IDENTITY (COMMON_MATRICES[0])
+#define MAT_PROJECTION (COMMON_MATRICES[1])
 
 #define SCREEN_W 1300
 #define SCREEN_H 900

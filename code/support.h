@@ -3,6 +3,9 @@
 #include "system.h"
 #include "real.h"
 
+#define RGBA_32( r, g, b, a ) ((r)|((g)<<8)|((b)<<16)|((a)<<24))
+#define RGB_32( r, g, b ) RGBA_32( r, g, b, 0xFF )
+
 /* A compile-time assert() */
 #define STATIC_ASSERT( cond ) if (0) { int _STATIC_ASSERT[1-2*(!(cond))]; (void) _STATIC_ASSERT; }
 

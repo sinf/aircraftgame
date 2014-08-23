@@ -1,2 +1,0 @@
-
-/* Todo: software GL implementation? */

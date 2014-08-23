@@ -17,9 +17,11 @@ U32 MWC( void )
 }
 #endif
 
+U64 prng_state[2];
+
 U64 prng_next( void )
 {
-	static U64 s[2] = {362436069, 521288629};
+	U64 *s = prng_state;
 	U64 a = s[0], b = s[1];
 	s[0] = b;
 	a ^= a << 23;

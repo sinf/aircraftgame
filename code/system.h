@@ -38,16 +38,6 @@ typedef unsigned long long int U64;
 #define sind	__builtin_sin
 #define cosd	__builtin_cos
 
-#if 1
-#define sincosf	__builtin_sincosf
-#else
-static inline void sincosf( float x, float *s, float *c )
-{
-	*s = sinf( x );
-	*c = cosf( x );
-}
-#endif
-
 #if 0
 /* memset/memcpy replacements (todo?) */
 extern void mem_clear( void *p, U8 b, U32 size );
