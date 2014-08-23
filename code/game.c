@@ -503,6 +503,7 @@ void update_world( void )
 	for( n=0; n<WORLD.num_things; n++ )
 	{
 		Thing *t = WORLD.things + n;
+		Real water_h;
 		
 		/* Reset acceleration */
 		t->accel.x = 0;
@@ -510,18 +511,23 @@ void update_world( void )
 		
 		t->age += REALF( W_TIMESTEP );
 		
-		if ( t->pos.y > get_water_height( t->pos.x ) )
+		water_h = get_water_height( t->pos.x );
+		
+		if ( t->pos.y > water_h )
 		{
 			t->underwater_time += REALF( W_TIMESTEP );
 			t->accel.y = REALF( W_WATER_BUOANCY );
 			
 			if ( t->type != T_PARTICLE )
 			{
-				if ( t->pos.y > REALF( W_WATER_DEATH_LEVEL ) )
+				if ( t->pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
 					t->hp = 0;
 				
 				if ( t->vel.y > REALF( 25.0f ) )
 					add_water_splash( t->pos );
+			}
+			else {
+				t->pos.y = water_h;
 			}
 		}
 		else
