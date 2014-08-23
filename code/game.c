@@ -114,7 +114,7 @@ static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type 
 	{
 		Vec2 vel;
 		
-		S32 m = MWC();
+		S32 m = prng_next();
 		S16 m1 = m;
 		S16 m2 = m >> 16;
 		
@@ -167,8 +167,8 @@ static void add_explosion( Vec2 pos, Real vel_x, Real vel_y )
 		
 		if ( t )
 		{
-			t->vel.x = vel_x - ( RDTSC() & 0xAAAA & 0x1FFF ) + 1024;
-			t->vel.y = vel_y - ( ~RDTSC() & 0xAAAA & 0x1FFF );
+			t->vel.x = vel_x - ( prng_next() & 0xAAAA & 0x1FFF ) + 1024;
+			t->vel.y = vel_y - ( ~prng_next() & 0xAAAA & 0x1FFF );
 		}
 	}
 }
@@ -411,7 +411,7 @@ static void do_enemy_aircraft_logic( Thing *self )
 	slow_rotate_thing( self, &target, REALF( AIRCRAFT_ROTATE_SPEED * W_TIMESTEP ) );
 	
 	self->data.ac.throttle_on = 1;
-	self->data.ac.gun_trigger = ( WORLD.player != NULL ) && !( MWC() & 0xFF );
+	self->data.ac.gun_trigger = ( WORLD.player != NULL ) && !( prng_next() & 0xFF );
 }
 
 static void spawn_enemies( void )
@@ -425,10 +425,10 @@ static void spawn_enemies( void )
 		add_battleship
 	};
 	
-	int n = MWC() & 0x7;
+	int n = prng_next() & 0x7;
 	while( n-- >= 0 )
 	{
-		Real x = MWC();
+		Real x = prng_next();
 		Thing *t;
 		
 		if ( WORLD.player )
@@ -439,7 +439,7 @@ static void spawn_enemies( void )
 			x += WORLD.player->pos.x;
 		}
 		
-		t = spawn_funcs[ MWC() & 0x3 ]();
+		t = spawn_funcs[ prng_next() & 0x3 ]();
 		if ( t )
 			t->pos.x = x;
 	}
@@ -587,7 +587,7 @@ void update_world( void )
 			case T_DEBRIS:
 				if ( t->age > REALF( 7.0 ) )
 					t->hp = 0;
-				if ( ( RDTSC() & 0x3 ) == 0 )
+				if ( ( prng_next() & 0x3 ) == 0 )
 				{
 					if ( !t->underwater_time )
 						add_smoke( t->pos );
@@ -646,7 +646,7 @@ void update_world( void )
 					for( k=0; k<5; k++ )
 					{
 						Vec2 pos;
-						pos.x = t->pos.x - 1024 + ( MWC() & 0x7FF );
+						pos.x = t->pos.x - 1024 + ( prng_next() & 0x7FF );
 						pos.y = get_water_height( t->pos.x );
 						add_water_splash( pos );
 					}

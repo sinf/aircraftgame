@@ -86,11 +86,4 @@ asm( "movl $1, %eax; xor %ebx, %ebx; int $128;" )
 #define PRINT_LINE(s) PRINT( s"\n" ) /* Print string + newline */
 #define PRINT_C(c) _PRINT( c, 1 ) /* Prints one character. NOTE: NO LITERAL ARGUMENT!! Must be a pointer (char*) */
 
-static inline U32 RDTSC( void )
-{
-	U32 x;
-	asm( "rdtsc; mov %%eax, %0" : "=r"(x) :: "eax", "edx" );
-	return x;
-}
-
 #endif

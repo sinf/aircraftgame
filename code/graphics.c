@@ -9,6 +9,9 @@
 /* You can see this many game units horizontally on the screen */
 #define HORZ_VISION_RANGE 110.0f
 
+/* Size of the biggest game object. This value is used for occlusion culling */
+#define LARGEST_OBJECT_RADIUS 5.0
+
 #define ENABLE_BLEND 1
 #define ENABLE_WIREFRAME 0
 #define ENABLE_GRID ENABLE_WIREFRAME
@@ -231,41 +234,26 @@ static void draw_water( const Water w[1], S32 eye_x, S32 eye_y )
 	glDrawArrays( GL_TRIANGLE_STRIP, 0, 2*WATER_RESOL+2 );
 }
 
-void render_world( int pass, Real eye_x_offset )
+static void draw_sky( Real eye_x, Real eye_y )
+{
+	U32 sky_color = RGB_32( 0xd8, 0xd8, 0xac );
+	
+	draw_bg_rect(
+		eye_x, eye_y,
+		REALF( W_WATER_LEVEL - W_HEIGHT - 64 ),
+		REALF( W_WATER_LEVEL + 64 ),
+		sky_color );
+}
+
+static void render_world_bg( Real eye_x, Real eye_y )
+{
+	/* Draw sky (also clears the framebuffer) */
+	draw_sky( eye_x, eye_y );
+}
+
+static void render_world_fg( Real eye_x, Real eye_y )
 {
 	unsigned n;
-	static Real eye_x = REALF( 0 );
-	static Real eye_y = REALF( 0 );
-	
-	#if 1
-	if ( WORLD.player )
-	{
-		eye_x = -WORLD.player->pos.x;
-		eye_y = -WORLD.player->pos.y;
-	}
-	#endif
-	
-	eye_x += eye_x_offset;
-	
-	if ( pass == 0 )
-	{
-		/* Draw sky (also clears the framebuffer) */
-		
-		U32 sky_color = RGB_32( 0xd8, 0xd8, 0xac );
-		
-		draw_bg_rect(
-			eye_x, eye_y,
-			REALF( W_WATER_LEVEL - W_HEIGHT - 64 ),
-			REALF( W_WATER_LEVEL + 64 ),
-			sky_color );
-		
-		return;
-	}
-	
-	#if ENABLE_WIREFRAME
-	glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-	#endif
-	
 	for( n=0; n<WORLD.num_things; n++ )
 	{
 		Thing *t = WORLD.things + n;
@@ -275,8 +263,13 @@ void render_world( int pass, Real eye_x_offset )
 		Real roll = 0;
 		ModelID mdl = BAD_MODEL_ID;
 		
+		const Real x_clip = REALF( HORZ_VISION_RANGE/2 + LARGEST_OBJECT_RADIUS );
+		
 		x += eye_x;
 		y += eye_y;
+		
+		if ( x > x_clip || x < -x_clip )
+			continue;
 		
 		switch( t->type )
 		{
@@ -337,20 +330,33 @@ void render_world( int pass, Real eye_x_offset )
 		#endif
 	}
 	
-	#if 1
 	draw_water( &WORLD.water, eye_x, eye_y );
+}
+
+void render( void )
+{
+	static Real eye_x=0, eye_y=0;
+	static Real px = 0;
+	
+	if ( WORLD.player )
+	{
+		eye_x = -WORLD.player->pos.x;
+		eye_y = -WORLD.player->pos.y;
+		px = WORLD.player->pos.x < REALF( W_WIDTH / 2 ) ? REALF( -W_WIDTH ) : REALF( W_WIDTH );
+	}
+	
+	render_world_bg( eye_x + px, eye_y );
+	render_world_bg( eye_x, eye_y );
+	
+	#if ENABLE_WIREFRAME
+	glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 	#endif
+	
+	render_world_fg( eye_x + px, eye_y );
+	render_world_fg( eye_x, eye_y );
 	
 	#if ENABLE_WIREFRAME
 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
-	#endif
-	
-	#if 0
-	/* Draw the sea */
-	draw_bg_rect( eye_x, eye_y,
-		REALF( W_WATER_LEVEL ),
-		REALF( W_WATER_LEVEL+128 ),
-		RGBA_32(  0, 0, 0x80, 0xAF ) );
 	#endif
 	
 	#if ENABLE_GRID
@@ -358,26 +364,3 @@ void render_world( int pass, Real eye_x_offset )
 	#endif
 }
 
-void render( void )
-{
-	int pass;
-	for( pass=0; pass<2; pass++ )
-	{
-		render_world( pass, REALF( 0 ) );
-		render_world( pass, REALF( W_WIDTH ) );
-		render_world( pass, REALF( -W_WIDTH ) );
-	}
-	
-	#if 0
-	if ( WORLD.player )
-	{
-		int x = REALF( P_LEFT + 2 );
-		int y = REALF( P_BOTTOM - 2 );
-		int w = ( WORLD.player->hp );
-		int h = REALF( 1 );
-		
-		glColor4ub( 255, 0, 0, 255 );
-		glRecti( x, y, x+w, y+h );
-	}
-	#endif
-}

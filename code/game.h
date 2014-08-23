@@ -82,7 +82,7 @@ struct Thing {
 
 
 #define WATER_T 25
-#define WATER_SPLASH_FORCE 0.3
+#define WATER_SPLASH_FORCE 0.4
 #define WATER_RESOL 256
 #define WATER_ELEM_SPACING ((W_WIDTH/(double)WATER_RESOL))
 typedef struct Water {
