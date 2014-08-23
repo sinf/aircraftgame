@@ -82,26 +82,26 @@ void setup2D( void )
 
 static void draw_blob( Real x, Real y, Real width, Real height, U32 color )
 {
-	#define N_BLOB_VERTS 9
-	float verts[N_BLOB_VERTS*2];
-	float a = 0.0f;
-	float scale_x = width >> 1;
-	float scale_y = height >> 1;
+	static const Vec2 verts_store[9] = {
+		REAL_VEC(0.0, 0.5),
+		REAL_VEC(0.3213938048432696, 0.383022221559489),
+		REAL_VEC(0.492403876506104, 0.08682408883346521),
+		REAL_VEC(0.43301270189221935, -0.2499999999999999),
+		REAL_VEC(0.17101007166283444, -0.46984631039295416),
+		REAL_VEC(-0.17101007166283433, -0.4698463103929542),
+		REAL_VEC(-0.4330127018922192, -0.2500000000000002),
+		REAL_VEC(-0.49240387650610407, 0.08682408883346499),
+		REAL_VEC(-0.3213938048432698, 0.3830222215594889)
+	};
+	GLint verts[9][2];
 	int n;
-	
-	for( n=0; n<N_BLOB_VERTS; n++ )
-	{
-		float *v = verts + 2 * n;
-		float xx, yy;
-		sincosf( a, &xx, &yy );
-		v[0] = x + xx * scale_x;
-		v[1] = y + yy * scale_y;
-		a += 2 * PI / N_BLOB_VERTS;
+	for( n=0; n<9; n++ ) {
+		verts[n][0] = x + REAL_MUL( verts_store[n].x, width );
+		verts[n][1] = y + REAL_MUL( verts_store[n].y, height );
 	}
-	
 	set_color_p( (void*) &color );
-	set_vertex_pointer( verts, 2, VT_FLOAT );
-	glDrawArrays( GL_TRIANGLE_FAN, 0, N_BLOB_VERTS );
+	set_vertex_pointer( &verts[0][0], 2, GL_INT );
+	glDrawArrays( GL_TRIANGLE_FAN, 0, 9 );
 }
 
 static void draw_particle( Real x, Real y, Thing *thing )

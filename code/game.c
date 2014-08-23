@@ -6,6 +6,7 @@
 
 #define ENABLE_GODMODE 1
 #define ENABLE_ENEMY_AIRCRAFT 0
+#define DISARM_ENEMIES 1
 
 World WORLD = {0};
 
@@ -14,10 +15,11 @@ static void remove_thing( Thing *t );
 static Thing *add_aircraft( void );
 static Thing *add_gunship( void );
 static Thing *add_battleship( void );
-static void add_water_splash( Vec2 pos, Real vel_y );
 static void add_smoke( Vec2 pos );
 static void add_explosion( Vec2 pos, Real vel_x, Real vel_y );
+
 static Real get_water_height( Real x );
+static void displace_water( Real x, Real delta );
 
 /* ***************************************************************** */
 /* ***************************************************************** */
@@ -99,6 +101,7 @@ static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 	thing->id = ++next_thing_id;
 	thing->pos = pos;
 	thing->buoancy = REALF( W_WATER_BUOANCY );
+	thing->mass = 20;
 	
 	if ( parent )
 	{
@@ -135,30 +138,6 @@ static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type 
 	}
 }
 
-static void add_water_splash( Vec2 pos, Real vel_y )
-{
-	int n;
-	Real wh = get_water_height( pos.x );
-	
-	if ( abs( pos.y - wh ) < REALF( 1.0 ) && abs( vel_y ) > REALF( 4 ) ) {
-		for( n=0; n<10; n++ )
-		{
-			/* Add small drops (10) */
-			add_particle( pos, 8, 4, PT_WATER1 );
-		
-			if ( n & 1 )
-			{
-				/* Add 'fog' (5) */
-				add_particle( pos, 6, 16, PT_WATER2 );
-			}
-		}
-	}
-	
-	n = pos.x / REALF( WATER_ELEM_SPACING );
-	n %= WATER_RESOL;
-	WORLD.water.z[n] += REAL_MUL( vel_y, REALF( WATER_SPLASH_FORCE ) );
-}
-
 static void add_smoke( Vec2 pos )
 {
 	add_particle( pos, 8, 8, PT_SMOKE );
@@ -174,10 +153,12 @@ static void add_explosion( Vec2 pos, Real vel_x, Real vel_y )
 		
 		if ( t )
 		{
-			t->vel.x = vel_x - ( prng_next() & 0xAAAA & 0x1FFF ) + 1024;
-			t->vel.y = vel_y - ( ~prng_next() & 0xAAAA & 0x1FFF );
+			t->vel.x = vel_x - ( prng_next() & 0x7FF ) + 1024;
+			t->vel.y = vel_y - ( prng_next() & 0xFFF );
 		}
 	}
+	
+	displace_water( pos.x, vel_y );
 }
 
 static Thing *add_aircraft( void )
@@ -189,6 +170,8 @@ static Thing *add_aircraft( void )
 	{
 		t->angle = REALF( -PI/2 );
 		t->data.ac.num_bombs = 10;
+		t->mass = 50;
+		t->buoancy = REALF( 100 );
 	}
 	
 	return t;
@@ -239,22 +222,16 @@ static void do_physics_step( Thing *t )
 		x = x0 + v * t + 1/2 * a * t * t
 	*/
 	
-	Real *pos = (Real*) &t->pos;
-	Real *vel = (Real*) &t->vel;
-	Real *accel = (Real*) &t->accel;
+	const Vec2 accel = t->accel;
+	Vec2 pos = t->pos, vel = t->vel;
 	DReal dt = REALF( W_TIMESTEP );
-	int n;
 	
-	for( n=0; n<2; n++ )
-	{
-		DReal new_vel = vel[n] + DREAL_MUL( accel[n], dt );
-		DReal new_pos = pos[n] + DREAL_MUL( new_vel, dt );
-		
-		vel[n] = new_vel;
-		pos[n] = new_pos;
-	}
+	t->old_pos = pos;
+	t->vel = vel = v_addmul( vel, accel, dt );
+	t->pos = v_addmul( pos, vel, dt );
 }
 
+/* only used by update_aircraft currently. should remove this */
 static Vec2 adjust_vector_length( Vec2 v, Real max, int nop_if_less_than )
 {
 	float k, len = sqrtf( REAL_MUL( v.x, v.x ) + REAL_MUL( v.y, v.y ) );
@@ -297,15 +274,16 @@ static void collide_projectile( Thing *proj )
 	}
 }
 
-#if 0
-extern void test_audio( void );
-#else
-static void test_audio( void ) {}
-#endif
-
 static void shoot_projectile( Thing *t, float angle )
 {
-	Thing *p = add_thing( T_PROJECTILE, t->pos, NULL );
+	Thing *p;
+	
+	#if DISARM_ENEMIES
+	if ( t != WORLD.player )
+		return;
+	#endif
+	
+	p = add_thing( T_PROJECTILE, t->pos, NULL );
 	if ( p )
 	{
 		p->vel = sin_cos_add_mul( angle, t->vel, PROJECTILE_VEL );
@@ -313,9 +291,7 @@ static void shoot_projectile( Thing *t, float angle )
 		/* p->data.pr.owner = t->id; */
 		
 		p->buoancy = REALF( PROJECTILE_BUOANCY );
-		
-		if ( t == WORLD.player )
-			test_audio();
+		p->mass = PROJECTILE_MASS;
 	}
 }
 
@@ -327,6 +303,8 @@ static void update_aircraft( Thing *t )
 	
 	/* Cripple the aircraft when underwater */
 	systems_online = ( t->underwater_time <= 0 );
+	
+	systems_online = 1;
 	
 	/* Limit velocity (air drag like behaviour). Makes the aircraft easier to control */
 	t->vel = adjust_vector_length( t->vel, REALF(MAX_AIRCRAFT_VEL), 1 );
@@ -470,6 +448,7 @@ static void update_water( Water w[1] )
 	double c0 = WATER_T * W_TIMESTEP / WATER_ELEM_SPACING;
 	Real c = REALF( c0 * c0 );
 	unsigned n;
+	Real world_x = 0;
 	
 	old_z = w->old_z;
 	cur_z = w->z;
@@ -484,21 +463,39 @@ static void update_water( Water w[1] )
 	
 	for( n=0; n<WATER_RESOL; n++ )
 	{
+		Real old_mid, vel_y;
+		
+		old_mid = old_z[n];
 		left = mid;
 		mid = right;
 		right = cur_z[(1+n)%WATER_RESOL];
+		vel_y = REAL_DIV( abs( mid - old_mid ), REALF( W_TIMESTEP ) );
 		
-		new_z[n] = 2*mid - old_z[n] + REAL_MUL( c, left + right - 2*mid );
+		/* Add particle effects if vertical velocity of the surface exceeds some thresholds */
+		if ( vel_y > REALF( 8 ) ) {
+			Vec2 pos;
+			pos.x = world_x + ( prng_next() & REAL_FRACT_MASK );
+			pos.y = REALF( W_WATER_LEVEL ) + mid;
+			
+			/* Add 'fog' (5) */
+			add_particle( pos, 6, 16, PT_WATER2 );
+			
+			if ( vel_y > REALF( 10 ) ) {
+				/* Add small drops (10) */
+				add_particle( pos, 8, 4, PT_WATER1 );
+			}
+		}
+		
+		new_z[n] = 2*mid - old_mid + REAL_MUL( c, left + right - 2*mid );
 		new_z[n] = REAL_MUL( REALF( WATER_DAMPING_FACTOR ), new_z[n] );
 		
-		/*
-		new_z[n] = 2 * mid - old_z[n] + REAL_MUL( WATER_T, ( left + right - 2 * mid ) / 2 );
-		*/
+		world_x += REALF( WATER_ELEM_SPACING );
 	}
 }
 
 static Real get_water_height( Real x )
 {
+	
 	Water *w = &WORLD.water;
 	Real h0, h1, t;
 	int cell;
@@ -506,10 +503,16 @@ static Real get_water_height( Real x )
 	cell = REALTOI( x );
 	cell = ( cell + WATER_RESOL ) % WATER_RESOL;
 	h0 = w->z[cell];
-	h1 = w->z[cell];
+	h1 = w->z[(cell + 1) % WATER_RESOL];
 	
 	t = REAL_FRACT_PART( x );
 	return REALF( W_WATER_LEVEL ) + h0 + REAL_MUL( t, h1 - h0 );
+}
+
+static void displace_water( Real x, Real delta )
+{
+	Water *w = &WORLD.water;
+	w->z[ ( REALTOI( x ) + WATER_RESOL ) % WATER_RESOL ] += delta;
 }
 
 static Real get_avg_water_height( Real x0, Real x1, unsigned samples )
@@ -542,7 +545,6 @@ void update_world( void )
 	{
 		Thing *t = WORLD.things + n;
 		Real water_h;
-		Vec2 orig_pos = t->pos;
 		
 		/* Reset acceleration */
 		t->accel.x = 0;
@@ -562,21 +564,12 @@ void update_world( void )
 			if ( t->type != T_PARTICLE ) {
 				if ( t->pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
 					t->hp = 0;
-				
-				add_water_splash( t->pos, t->vel.y );
 			} else {
 				t->pos.y = water_h;
 			}
 		}
 		else
-		{
-			if ( t->old_pos.y > water_h ) {
-				if ( t->type != T_PARTICLE ) {
-					/* Add water splash when an object gets out of the water */
-					add_water_splash( t->pos, 0 );
-				}
-			}
-			
+		{	
 			t->underwater_time = 0;
 		}
 		
@@ -678,6 +671,14 @@ void update_world( void )
 		{
 			/* Apply physics to everything */
 			do_physics_step( t );
+			
+			if ( t->type != T_PARTICLE && t->pos.y > water_h )
+			{
+				const float thickness = 5000; /* larger value makes water move less */
+				const float falloff = 2; /* falloff distance so that objects deep underwater don't make the surface move */
+				Real f = REAL_MUL( REALF( falloff ) - MIN( t->pos.y - water_h, REALF( falloff ) ), t->mass * t->vel.y ) / ( thickness * falloff );
+				displace_water( t->pos.x, f );
+			}
 		}
 		
 		/* Wrap around world edges */
@@ -688,8 +689,6 @@ void update_world( void )
 			WORLD.player->hp = REALF( 100 );
 		#endif
 		
-		t->old_pos = orig_pos;
-		
 		/* Kill things with no HP remaining */
 		if ( t->hp <= 0 )
 		{
@@ -698,6 +697,7 @@ void update_world( void )
 				/* Throw pieces of debris */
 				add_explosion( t->pos, t->vel.x, t->vel.y );
 				
+				#if 0
 				if ( t->type == T_GUNSHIP || t->type == T_BATTLESHIP )
 				{
 					/* Exploding ships cause a large water splash: */
@@ -707,9 +707,9 @@ void update_world( void )
 						Vec2 pos;
 						pos.x = t->pos.x - 1024 + ( prng_next() & 0x7FF );
 						pos.y = get_water_height( t->pos.x );
-						add_water_splash( pos, WATER_SPLASH_FORCE_EXPL );
 					}
 				}
+				#endif
 			}
 			
 			remove_thing( t );

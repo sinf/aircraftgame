@@ -79,11 +79,15 @@ struct Thing {
 	U32 age; /* unsigned Real; seconds */
 	U32 underwater_time;
 	Real buoancy;
+	int mass;
 	ThingData data;
 };
 
 /* How to fix the physics:
-- Thing needs to have mass. Higher mass reduces velocity damping in water
+- Thing needs to have mass
+- Mass affects velocity damping in water
+- Mass affects air resistance
+- Mass affects impacts (water splashing, projectile kickback)
 - Thing needs some aerodynamics information for more accurate air/water friction
 - Thing needs a buoancy factor. Some things float more easily (boat vs cannon ball)
 */
@@ -137,7 +141,8 @@ extern struct World WORLD;
 
 #define PROJECTILE_VEL 64.0f
 #define PROJECTILE_DAMAGE 24
-#define PROJECTILE_BUOANCY 5
+#define PROJECTILE_BUOANCY 2.5
+#define PROJECTILE_MASS 20
 
 #define MAX_UNDERWATER_VEL 0.4f
 #define MAX_THING_HP 80

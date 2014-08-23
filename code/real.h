@@ -18,6 +18,7 @@ typedef S32 DReal;
 #endif
 
 #define REAL_FRACT_BITS 8
+#define REAL_FRACT_MASK ((1<<REAL_FRACT_BITS)-1)
 #define REAL_FRACT_PART( x ) ((x) & (1<<REAL_FRACT_BITS)-1)
 
 #define REAL_VEC( x, y ) {REALF(x), REALF(y)} /* Converts 2 floats/ints -> Vec2 */
@@ -35,5 +36,14 @@ typedef S32 DReal;
 typedef struct {
 	Real x, y;
 } Vec2;
+
+Vec2 v_lerp( Vec2 a, Vec2 b, DReal t );
+Vec2 v_addmul( Vec2 a, Vec2 b, DReal b_scale );
+Vec2 v_sincos( Real a );
+Vec2 v_rotate( Vec2 v, Vec2 sincos_a );
+Vec2 v_sub( Vec2 a, Vec2 b ); /* a - b */
+Real v_lensq( Vec2 v ); /* x² + y² */
+Real v_length( Vec2 v ); /* sqrt( x² + y² ) */
+Vec2 v_normalize( Vec2 v );
 
 #endif
