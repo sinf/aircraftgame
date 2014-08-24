@@ -6,7 +6,7 @@
 
 #define BLOB_TEX_S 32
 
-static void generate_blob_texels( U32 texels[BLOB_TEX_S][BLOB_TEX_S] )
+static void generate_blob_texels( U32 texels[2][BLOB_TEX_S][BLOB_TEX_S] )
 {
 	int x, y;
 	for( y=0; y<BLOB_TEX_S; y++ ) {
@@ -15,7 +15,11 @@ static void generate_blob_texels( U32 texels[BLOB_TEX_S][BLOB_TEX_S] )
 			int dx = 2 * x + 1 - BLOB_TEX_S;
 			int dy = 2 * y + 1 - BLOB_TEX_S;
 			U32 d = dy*dy + dx*dx;
-			#if 0
+			
+			/* Sharp blob */
+			texels[0][y][x] = d <= r ? 0xFFFFFFFF : 0xFFFFFF;
+			
+			/* Fuzzy blob */
 			if ( r < d ) {
 				d = 0;
 			} else {
@@ -24,22 +28,19 @@ static void generate_blob_texels( U32 texels[BLOB_TEX_S][BLOB_TEX_S] )
 				d <<= 24;
 			}
 			d |= 0xFFFFFF;
-			texels[y][x] = d;
-			#else
-			texels[y][x] = d <= r ? 0xFFFFFFFF : 0xFFFFFF;
-			#endif
+			texels[1][y][x] = d;
 		}
 	}
 }
 
 static void generate_blob_texture( void )
 {
-	U32 texels[BLOB_TEX_S][BLOB_TEX_S];
+	U32 texels[2][BLOB_TEX_S][BLOB_TEX_S];
 	GLuint tex;
 	generate_blob_texels( texels );
 	glGenTextures( 1, &tex );
 	glBindTexture( GL_TEXTURE_2D, tex );
-	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, BLOB_TEX_S, BLOB_TEX_S, 0, GL_RGBA, GL_UNSIGNED_BYTE, &texels[0][0] );
+	glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, BLOB_TEX_S, 2*BLOB_TEX_S, 0, GL_RGBA, GL_UNSIGNED_BYTE, &texels[0][0][0] );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
@@ -190,8 +191,9 @@ struct BlobVertex {
 	float s, t;
 };
 
-void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] )
+void draw_blobs( unsigned num_blobs, const GfxBlob blobs[], BlobMode mode )
 {
+	const float t = mode == BLOB_FUZZY ? 0.5f : 0;
 	struct BlobVertex (*quads)[4];
 	U32 *colors;
 	unsigned n;
@@ -212,22 +214,22 @@ void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] )
 		quads[n][0].x = west;
 		quads[n][0].y = north;
 		quads[n][0].s = 0;
-		quads[n][0].t = 0;
+		quads[n][0].t = 0 + t;
 		
 		quads[n][1].x = west;
 		quads[n][1].y = south;
 		quads[n][1].s = 0;
-		quads[n][1].t = 1;
+		quads[n][1].t = 0.5f + t;
 		
 		quads[n][2].x = east;
 		quads[n][2].y = south;
 		quads[n][2].s = 1;
-		quads[n][2].t = 1;
+		quads[n][2].t = 0.5f + t;
 		
 		quads[n][3].x = east;
 		quads[n][3].y = north;
 		quads[n][3].s = 1;
-		quads[n][3].t = 0;
+		quads[n][3].t = 0 + t;
 		
 		for( i=0; i<4; i++ )
 			colors[4*n+i] = blobs[n].color;

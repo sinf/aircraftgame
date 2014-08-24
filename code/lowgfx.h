@@ -27,8 +27,13 @@ typedef struct GfxVertex {
 	U32 color;
 } GfxVertex;
 
+typedef enum {
+	BLOB_SHARP,
+	BLOB_FUZZY
+} BlobMode;
+
 void draw_models( unsigned num_models, ModelID model_id, const float *matr4x4 );
-void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] );
+void draw_blobs( unsigned num_blobs, const GfxBlob blobs[], BlobMode mode );
 void draw_triangle_strip( unsigned num_verts, const GfxVertex verts[] );
 
 #endif
