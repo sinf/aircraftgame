@@ -27,9 +27,14 @@ struct AAGun {
 	Real gun_timer;
 };
 
+typedef enum {
+	DAMAGES_PLAYER,
+	DAMAGES_ENEMIES
+	/*DAMAGES_EVERYONE*/
+} DamageType;
+
 struct Projectile {
-	int owned_by_player;
-	/* ThingID owner; */
+	DamageType dmg;
 };
 
 typedef enum {

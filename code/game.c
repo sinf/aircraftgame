@@ -6,7 +6,7 @@
 
 #define ENABLE_GODMODE 1
 #define ENABLE_ENEMY_AIRCRAFT 1
-#define DISARM_ENEMIES 1
+#define DISARM_ENEMIES 0
 
 World WORLD = {0};
 
@@ -269,24 +269,34 @@ static int test_collision( Vec2 *a, Vec2 *b, Real r )
 	return ( d2 <= r2 );
 }
 
+static int collide_projectile_1( Thing *proj, Thing *victim )
+{
+	Real r = REALF( 1 );
+	r <<= ( victim->type == T_GUNSHIP || victim->type == T_BATTLESHIP ) << 1;
+	
+	if ( victim->type < T_PROJECTILE && test_collision( &proj->pos, &victim->pos, r ) )
+	{
+		proj->hp = 0;
+		victim->hp -= REALF( PROJECTILE_DAMAGE );
+		add_smoke( proj->pos );
+		return 1;
+	}
+	
+	return 0;
+}
+
 static void collide_projectile( Thing *proj )
 {
-	unsigned n;
-	for( n=0; n<MAX_THINGS; n++ )
-	{
-		Thing *thing = WORLD.things + n;
-		Real r = REALF( 1 );
-		
-		r <<= ( thing->type == T_GUNSHIP || thing->type == T_BATTLESHIP ) << 1;
-		
-		if ( thing->type < T_PROJECTILE
-			&& ( proj->data.pr.owned_by_player != ( thing == WORLD.player ) )
-			&& test_collision( &proj->pos, &thing->pos, r ) )
-		{
-			proj->hp = 0;
-			thing->hp -= REALF( PROJECTILE_DAMAGE );
-			add_smoke( proj->pos );
-			break;
+	if ( proj->data.pr.dmg == DAMAGES_PLAYER ) {
+		if ( WORLD.player )
+			collide_projectile_1( proj, WORLD.player );
+	} else {
+		/* Note: The projectile is collision-tested against itself but collide_projectile_1() will reject because the victim is a projectile as well */
+		unsigned n;
+		for( n=0; n<MAX_THINGS; n++ ) {
+			Thing *victim = WORLD.things + n;
+			if ( victim != WORLD.player && collide_projectile_1( proj, victim ) )
+				break;
 		}
 	}
 }
@@ -304,8 +314,7 @@ static void shoot_projectile( Thing *t, float angle )
 	if ( p )
 	{
 		p->vel = sin_cos_add_mul( angle, t->vel, PROJECTILE_VEL );
-		p->data.pr.owned_by_player = ( t == WORLD.player );
-		/* p->data.pr.owner = t->id; */
+		p->data.pr.dmg = ( t == WORLD.player ) ? DAMAGES_ENEMIES : DAMAGES_PLAYER;
 		
 		p->buoancy = REALF( PROJECTILE_BUOANCY );
 		p->mass = PROJECTILE_MASS;
