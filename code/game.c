@@ -5,8 +5,8 @@
 #include "game.h"
 
 #define ENABLE_GODMODE 1
-#define ENABLE_ENEMY_AIRCRAFT 1
-#define DISARM_ENEMIES 0
+#define ENABLE_ENEMY_AIRCRAFT 0
+#define DISARM_ENEMIES 1
 
 World WORLD = {0};
 
@@ -98,7 +98,7 @@ static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 	thing->hp = hp;
 	thing->id = ++next_thing_id;
 	thing->pos = pos;
-	thing->buoancy = REALF( W_WATER_BUOANCY );
+	thing->buoancy = REALF( 5.0f );
 	thing->mass = 20;
 	
 	if ( parent )
@@ -188,7 +188,7 @@ static Thing *add_aircraft( void )
 		t->angle = REALF( -PI/2 );
 		t->data.ac.num_bombs = 10;
 		t->mass = 50;
-		t->buoancy = REALF( 100 );
+		t->buoancy = REALF( AIRCRAFT_BUOANCY );
 	}
 	
 	return t;
@@ -204,6 +204,8 @@ static Thing *add_gunship( void )
 	if ( gs )
 	{
 		gs->vel.x = ship_vel; /* Set the ship in slow horizontal motion */
+		gs->buoancy = REALF( 25.0f );
+		/* gs->mass = 100; */
 		add_thing( T_AAGUN, gun_pos, gs );
 	}
 	
@@ -222,10 +224,12 @@ static Thing *add_battleship( void )
 	if ( bs )
 	{
 		bs->vel.x = ship_vel;
+		bs->buoancy = REALF( 25.0f );
+		/* bs->mass = 200; */
 		
-		add_thing( T_AAGUN, gun1_offset, bs );
-		add_thing( T_AAGUN, gun2_offset, bs );
-		add_thing( T_RADAR, radar_offset, bs );
+		add_thing( T_AAGUN, gun1_offset, bs )->mass = 1;
+		add_thing( T_AAGUN, gun2_offset, bs )->mass = 1;
+		add_thing( T_RADAR, radar_offset, bs )->mass = 1;
 	}
 	
 	return bs;
@@ -582,10 +586,13 @@ void update_world( void )
 		
 		if ( t->pos.y > water_h )
 		{
+			Real water_friction = REALF( 0.94 );
+			
 			t->underwater_time += REALF( W_TIMESTEP );
 			t->accel.y -= t->buoancy;
-			t->vel.x = REAL_MUL( t->vel.x, REALF( 0.97 ) );
-			t->vel.y = REAL_MUL( t->vel.y, REALF( 0.97 ) );
+			
+			t->vel.x = REAL_MUL( t->vel.x, water_friction );
+			t->vel.y = REAL_MUL( t->vel.y, water_friction );
 			
 			if ( t->type != T_PARTICLE ) {
 				if ( t->pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )

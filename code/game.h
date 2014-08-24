@@ -84,7 +84,7 @@ struct Thing {
 	U32 age; /* unsigned Real; seconds */
 	U32 underwater_time;
 	Real buoancy;
-	int mass;
+	int mass; /* all masses should be in range 1 .. 255. Mass must not ever be 0! */
 	ThingData data;
 };
 
@@ -126,6 +126,8 @@ struct World {
 
 extern struct World WORLD;
 
+#define AIRCRAFT_BUOANCY 3.0
+
 #define GAME_TICKS_PER_SEC 60
 
 /* W_... = World constants: */
@@ -136,7 +138,6 @@ extern struct World WORLD;
 #define W_GRAVITY 9.81f
 
 #define W_WATER_LEVEL 20.0f /* Water y coordinate */
-#define W_WATER_BUOANCY 25.0f
 #define W_WATER_DEPTH 30.0f
 #define W_WATER_DEATH_LEVEL (W_WATER_LEVEL+35)
 

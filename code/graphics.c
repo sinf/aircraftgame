@@ -78,7 +78,7 @@ static void generate_one_cloud( GfxBlob out[], unsigned num_blobs )
 		DReal step_length = min_step + prng_next() % ( max_step - min_step );
 		Vec2 dir = v_sincos( a = ( a + prng_next() % max_rotation - max_rotation / 2 + tau ) % tau );
 		
-		out[blob].color = RGBA_32( 255, 255, 255, 32 );
+		out[blob].color = RGBA_32( 255, 255, 255, 40 );
 		out[blob].x = p.x;
 		out[blob].y = p.y;
 		out[blob].scale_x = r;
