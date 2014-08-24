@@ -22,6 +22,17 @@
 #define MIN(a,b) ( (a) < (b) ? (a) : (b) )
 #define CLAMP(x,min,max) MIN(max,MAX((x),min))
 
+#ifdef DEBUG
+#define ASSERT(x) if (!(x)) { \
+	extern int printf( const char *, ... ); \
+	extern void abort( void ); \
+	printf( "%s:%d: Assertion failed: %s\n", __FILE__, __LINE__, #x ); \
+	abort(); \
+}
+#else
+#define ASSERT(x)
+#endif
+
 extern U64 prng_next( void ); /* <- using this function might reduce code size */
 
 #endif

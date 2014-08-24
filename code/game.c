@@ -4,9 +4,9 @@
 #define _GAME_INTERNALS
 #include "game.h"
 
-#define ENABLE_GODMODE 0
-#define ENABLE_ENEMY_AIRCRAFT 1
-#define DISARM_ENEMIES 0
+#define ENABLE_GODMODE 1
+#define ENABLE_ENEMY_AIRCRAFT 0
+#define DISARM_ENEMIES 1
 
 World WORLD = {0};
 

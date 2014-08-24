@@ -98,6 +98,10 @@ struct Thing {
 #define WATER_SPLASH_FORCE_EXPL 8.0
 #define WATER_RESOL 256
 #define WATER_ELEM_SPACING ((W_WIDTH/(double)WATER_RESOL))
+
+#define WATER_CELL_AT_X(x) (WATER_RESOL*(x)/REALF(W_WIDTH))
+#define WATER_CELL_AT_X_WRAPPED(x) (WATER_CELL_AT_X(x)+WATER_RESOL)%WATER_RESOL)
+
 typedef struct Water {
 	/* 1-D heightmaps relative to W_WATER_LEVEL */
 	Real buffers[3][WATER_RESOL];

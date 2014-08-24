@@ -27,8 +27,8 @@ typedef struct GfxVertex {
 	U32 color;
 } GfxVertex;
 
-void draw_models( int num_models, ModelID model_id, const float *matr4x4 );
-void draw_blobs( int num_blobs, const GfxBlob blobs[] );
-void draw_triangle_strip( int num_verts, const GfxVertex verts[] );
+void draw_models( unsigned num_models, ModelID model_id, const float *matr4x4 );
+void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] );
+void draw_triangle_strip( unsigned num_verts, const GfxVertex verts[] );
 
 #endif

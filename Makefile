@@ -9,7 +9,7 @@ SOURCES=$(shell echo code/*.c)
 DEPS=$(SOURCES) $(shell echo code/*.h)
 
 SMALL_OPTIONS=$(OPTIONS) -O2 -Wl,-O2 -ffast-math -mfpmath=both
-DEBUG_OPTIONS=$(OPTIONS) -O0 -g
+DEBUG_OPTIONS=$(OPTIONS) -O0 -g -DDEBUG
 #-flto -fwhole-program 
 
 # Options for 32-bit build:

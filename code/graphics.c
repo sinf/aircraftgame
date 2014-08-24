@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "system.h"
 #include "support.h"
 
@@ -8,13 +9,22 @@
 
 /* You can see this many game units horizontally on the screen */
 #define HORZ_VISION_RANGE 90.0f
+/*
+#define VERT_VISION_RANGE (HORZ_VISION_RANGE/P_SCREEN_RATIO)
+*/
 
 /* Size of the biggest game object. This value is used for occlusion culling */
-#define LARGEST_OBJECT_RADIUS 5.0
+#define LARGEST_OBJECT_RADIUS 10.0
 
 #define ENABLE_BLEND 1
 #define ENABLE_WIREFRAME 1
 #define ENABLE_GRID ENABLE_WIREFRAME
+
+static Real clip_test_x0 = 0;
+static Real clip_test_x1 = 0;
+static int object_is_visible( Real x ) {
+	return ( clip_test_x0 <= x ) && ( x < clip_test_x1 );
+}
 
 const float COMMON_MATRICES[2][16] = {
 	{1, 0, 0, 0,
@@ -85,38 +95,42 @@ static GfxBlob get_particle_blob( Thing *thing )
 	return blob;
 }
 
-static void draw_water( const Water w[1] )
+static void draw_water( void )
 {
-	GfxVertex verts[(WATER_RESOL+1)*2];
-	
 	const U32 c_surf = RGBA_32( 0, 0, 255, 80 );
 	const U32 c_bottom = RGBA_32( 0, 0, 32, 255 );
+	const Water *w = &WORLD.water;
+	
+	GfxVertex *verts;
+	unsigned begin, end, n;
+	unsigned num_cells, num_verts;
 	
 	S32 offset_y = REALF( W_WATER_LEVEL );
 	S32 bottom = REALF( 50.0 );
-	unsigned n;
-	S32 pos_x = 0;
+	S32 pos_x;
 	
-	for( n=0; n<WATER_RESOL; n++ ) {
-		unsigned v0 = 2*n, v1 = 2*n+1;
-		verts[v0].x = pos_x;
-		verts[v0].y = w->z[n] + offset_y;
-		verts[v0].color = c_surf;
-		verts[v1].x = pos_x;
-		verts[v1].y = bottom;
-		verts[v1].color = c_bottom;
+	begin = MAX( WATER_CELL_AT_X( clip_test_x0 ), 0 );
+	end = WATER_CELL_AT_X( clip_test_x1 );
+	
+	num_cells = ( end - begin + 1 );
+	num_verts = 2 * num_cells;
+	verts = alloca( num_verts * sizeof(*verts) );
+	
+	pos_x = begin * REALF( WATER_ELEM_SPACING );	
+	
+	for( n=0; n<num_cells; n++ ) {
+		unsigned a = 2*n;
+		unsigned b = a+1;
+		verts[a].x = pos_x;
+		verts[a].y = w->z[(begin+n)%WATER_RESOL] + offset_y;
+		verts[a].color = c_surf;
+		verts[b].x = pos_x;
+		verts[b].y = bottom;
+		verts[b].color = c_bottom;
 		pos_x += REALF( WATER_ELEM_SPACING );
 	}
 	
-	verts[2*WATER_RESOL].x = pos_x;
-	verts[2*WATER_RESOL].y = verts[0].y;
-	verts[2*WATER_RESOL].color = c_surf;
-	
-	verts[2*WATER_RESOL+1].x = pos_x;
-	verts[2*WATER_RESOL+1].y = bottom;
-	verts[2*WATER_RESOL+1].color = c_bottom;
-	
-	draw_triangle_strip( (WATER_RESOL+1)*2, verts );
+	draw_triangle_strip( num_verts, verts );
 }
 
 static void draw_sky( void )
@@ -134,21 +148,16 @@ static void render_world_bg( void )
 	draw_sky();
 }
 
-static void render_world_fg( Real eye_x )
+static void render_world_fg( void )
 {
 	#define MAX_MODEL_INST 512
-	#define MAX_BLOBS 4096
-	
+	#define MAX_BLOBS 32000
 	float matr[NUM_MODELS][MAX_MODEL_INST][16];
 	GfxBlob blobs[MAX_BLOBS];
 	
 	unsigned num_inst[NUM_MODELS] = {0};
 	unsigned num_blobs = 0;
 	unsigned n;
-	
-	const Real clip_r = REALF( HORZ_VISION_RANGE/2 + LARGEST_OBJECT_RADIUS );
-	const Real clip_west = eye_x - clip_r;
-	const Real clip_east = eye_x + clip_r;
 	
 	for( n=0; n<WORLD.num_things; n++ )
 	{
@@ -159,10 +168,8 @@ static void render_world_fg( Real eye_x )
 		Real roll = 0;
 		ModelID mdl = BAD_MODEL_ID;
 		
-		#if 0
-		if ( x < clip_west || x > clip_east )
+		if ( !object_is_visible( x ) )
 			continue;
-		#endif
 		
 		switch( t->type )
 		{
@@ -251,44 +258,82 @@ static void render_world_fg( Real eye_x )
 		#endif
 	}
 	
-	for( n=0; n<NUM_MODELS; n++ )
+	ASSERT( num_blobs < MAX_BLOBS );
+	
+	for( n=0; n<NUM_MODELS; n++ ) {
+		ASSERT( num_inst[n] < MAX_MODEL_INST );
 		draw_models( num_inst[n], n, &matr[n][0][0] );
+	}
 	
 	draw_blobs( num_blobs, blobs );
+}
+
+static void draw_wrapped( Real eye_x, void (*draw_stuff)(void) )
+{
+	#if 0
+	/* Make it very clear what is being clipped */
+	const Real view_dist = REALF( 10 );
+	#else
+	const Real view_dist = REALF( HORZ_VISION_RANGE/2 + LARGEST_OBJECT_RADIUS );
+	#endif
+	
+	const Real ww = REALF( W_WIDTH );
+	Real view_limit_east = eye_x + view_dist;
+	Real view_limit_west = eye_x - view_dist;
+	
+	if ( view_limit_west < 0 ) {
+		
+		clip_test_x0 = 0;
+		clip_test_x1 = view_limit_east;
+		draw_stuff();
+		
+		clip_test_x0 = view_limit_west + ww;
+		clip_test_x1 = ww;
+		mat_push();
+		mat_translate( REALF( -W_WIDTH ), 0, 0 );
+		draw_stuff();
+		mat_pop();
+	} else if ( view_limit_east > ww ) {
+		
+		clip_test_x0 = view_limit_west;
+		clip_test_x1 = ww;
+		draw_stuff();
+		
+		clip_test_x0 = 0;
+		clip_test_x1 = view_limit_east - ww;
+		mat_push();
+		mat_translate( REALF( W_WIDTH ), 0, 0 );
+		draw_stuff();
+		mat_pop();
+	} else {
+		clip_test_x0 = view_limit_west;
+		clip_test_x1 = view_limit_east;
+		draw_stuff();
+	}
 }
 
 void render( void )
 {
 	static Real eye_x=0, eye_y=0;
-	static Real px = 0;
+	/*static Real px = 0;*/
+	
+	#if DEBUG
+	extern void glClear( int );
+	glClear( 0x4000 );
+	#endif
 	
 	if ( WORLD.player )
 	{
 		eye_x = WORLD.player->pos.x;
 		eye_y = WORLD.player->pos.y;
-		px = WORLD.player->pos.x < REALF( W_WIDTH / 2 ) ? REALF( -W_WIDTH ) : REALF( W_WIDTH );
 	}
 	
 	mat_push();
 	mat_translate( -eye_x, -eye_y, 0 );
 	
-	render_world_bg();
-	mat_push();
-	mat_translate( px, 0, 0 );
-	render_world_bg();
-	mat_pop();
-	
-	render_world_fg( eye_x );
-	mat_push();
-	mat_translate( px, 0, 0 );
-	render_world_fg( eye_x );
-	mat_pop();
-	
-	draw_water( &WORLD.water );
-	mat_push();
-	mat_translate( px, 0, 0 );
-	draw_water( &WORLD.water );
-	mat_pop();
+	draw_wrapped( eye_x, render_world_bg );
+	draw_wrapped( eye_x, render_world_fg );
+	draw_wrapped( eye_x, draw_water );
 	
 	mat_pop();
 }

@@ -85,24 +85,3 @@ void unpack_models( void )
 		index_p += MODEL_INFO[m].num_indices;
 	}
 }
-#if 0
-void draw_model( ModelID m, Real x, Real y, Real r_yaw, Real r_roll )
-{
-	U8 num_quads = MODEL_INFO[m].num_indices >> 2;
-	U8 const *index_p = index_arrays[m];
-	
-	translate2( x, y );
-	rotate( DEGREES( REALTOF( r_yaw ) ), 0, 0, 1 );
-	rotate( DEGREES( REALTOF( r_roll ) ), 1, 0, 0 );
-	
-	set_color_p( (void*) &MODEL_INFO[m].color );
-	set_vertex_pointer( vertex_arrays[m], DIMENSIONS( MODEL_INFO[m] ), VT_INT );
-	draw_quads_indexed( index_p, 1, num_quads );
-	
-	if ( MODEL_INFO[m].flags & F_MIRROR )
-	{
-		scale3( 1, 1, -1 );
-		draw_quads_indexed( index_p, 1, num_quads );
-	}
-}
-#endif
