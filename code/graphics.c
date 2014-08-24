@@ -9,9 +9,8 @@
 
 /* You can see this many game units horizontally on the screen */
 #define HORZ_VISION_RANGE 90.0f
-/*
+
 #define VERT_VISION_RANGE (HORZ_VISION_RANGE/P_SCREEN_RATIO)
-*/
 
 /* Size of the biggest game object. This value is used for occlusion culling */
 #define LARGEST_OBJECT_RADIUS 10.0
@@ -106,7 +105,7 @@ static void draw_water( void )
 	unsigned num_cells, num_verts;
 	
 	S32 offset_y = REALF( W_WATER_LEVEL );
-	S32 bottom = REALF( 50.0 );
+	S32 bottom = REALF( W_WATER_LEVEL + W_WATER_DEPTH );
 	S32 pos_x;
 	
 	begin = MAX( WATER_CELL_AT_X( clip_test_x0 ), 0 );
@@ -133,6 +132,7 @@ static void draw_water( void )
 	draw_triangle_strip( num_verts, verts );
 }
 
+#if 0
 static void draw_sky( void )
 {
 	draw_box(
@@ -147,6 +147,7 @@ static void render_world_bg( void )
 	/* This clears the framebuffer for the first time */
 	draw_sky();
 }
+#endif
 
 static void render_world_fg( void )
 {
@@ -238,12 +239,15 @@ static void render_world_fg( void )
 				
 				mat_translate( x, y, 0 );
 				mat_rotate( 2, REALTOF( yaw ) );
+				mat_push();
+				
 				mat_rotate( 0, REALTOF( roll ) );
 				mat_store( matr[mdl][num_inst[mdl]++] );
 				
+				mat_pop();
+				
 				if ( t->type == T_AIRCRAFT && t->data.ac.throttle_on ) {
 					if ( num_inst[M_AIRCRAFT_FLAME] < MAX_MODEL_INST ) {
-						mat_rotate( 0, REALTOF( roll ) );
 						mat_store( matr[M_AIRCRAFT_FLAME][num_inst[M_AIRCRAFT_FLAME]++] );
 					}
 				}
@@ -312,6 +316,17 @@ static void draw_wrapped( Real eye_x, void (*draw_stuff)(void) )
 	}
 }
 
+static void draw_background( void )
+{
+	const U32 sky_color = RGB_32( 0xd8, 0xd8, 0xac );
+	const float top_extra = 20;
+	Real w = REALF( W_WIDTH );
+	
+	draw_box(
+		-w, REALF( W_WATER_LEVEL - W_HEIGHT - top_extra ),
+		3 * w, REALF( W_HEIGHT + top_extra + W_WATER_DEPTH ), sky_color );
+}
+
 void render( void )
 {
 	static Real eye_x=0, eye_y=0;
@@ -331,9 +346,13 @@ void render( void )
 	mat_push();
 	mat_translate( -eye_x, -eye_y, 0 );
 	
-	draw_wrapped( eye_x, render_world_bg );
+	draw_background();
 	draw_wrapped( eye_x, render_world_fg );
 	draw_wrapped( eye_x, draw_water );
+	
+	draw_box(
+		REALF( -W_WIDTH ), REALF( W_WATER_LEVEL + W_WATER_DEPTH ),
+		REALF( 3 * W_WIDTH ), REALF( 100 ), RGB_32( 0, 0, 0 ) );
 	
 	mat_pop();
 }

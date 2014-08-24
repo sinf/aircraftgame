@@ -5,7 +5,7 @@
 #include "game.h"
 
 #define ENABLE_GODMODE 1
-#define ENABLE_ENEMY_AIRCRAFT 0
+#define ENABLE_ENEMY_AIRCRAFT 1
 #define DISARM_ENEMIES 1
 
 World WORLD = {0};
@@ -141,6 +141,25 @@ static void add_smoke( Vec2 pos )
 	add_particle( pos, 8, 8, PT_SMOKE );
 }
 
+/*
+r = Falloff radius; f(r) = 0
+a = -c/r²
+c = Maximum value of the function; located at f(0)
+
+The falloff function:
+f(x) = ax² + c
+*/
+
+/* Might have to be fixed to take W_TIMESTEP into account */
+static Real calc_explos_water_shock( Real ey )
+{
+	float y = REALTOF( REALF( W_WATER_LEVEL ) - ey );
+	float r = 10.0; /* falloff radius */
+	float c = 2.5; /* maximum force */
+	float a = c / -(r*r);
+	return REALF( MAX( 0, a*y*y + c ) );
+}
+
 static void add_explosion( Vec2 pos, Real vel_x, Real vel_y )
 {
 	int n;
@@ -156,7 +175,7 @@ static void add_explosion( Vec2 pos, Real vel_x, Real vel_y )
 		}
 	}
 	
-	displace_water( pos.x, -vel_y );
+	displace_water( pos.x, calc_explos_water_shock( pos.y ) );
 }
 
 static Thing *add_aircraft( void )
@@ -681,6 +700,10 @@ void update_world( void )
 		
 		/* Wrap around world edges */
 		t->pos.x = ( REALF( W_WIDTH ) + t->pos.x ) % REALF( W_WIDTH );
+		
+		/* Kill things that sink too deep */
+		if ( t->pos.y > REALF( W_WATER_DEATH_LEVEL ) )
+			t->hp = 0;
 		
 		#if ENABLE_GODMODE
 		if ( WORLD.player )

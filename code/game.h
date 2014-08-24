@@ -132,7 +132,8 @@ extern struct World WORLD;
 
 #define W_WATER_LEVEL 20.0f /* Water y coordinate */
 #define W_WATER_BUOANCY 25.0f
-#define W_WATER_DEATH_LEVEL (W_WATER_LEVEL+15)
+#define W_WATER_DEPTH 30.0f
+#define W_WATER_DEATH_LEVEL (W_WATER_LEVEL+35)
 
 /* Time interval between enemy wave spawns (in seconds) */
 #define ENEMY_SPAWN_INTERVAL 5
