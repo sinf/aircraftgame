@@ -97,9 +97,10 @@ static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 	thing->type = type;
 	thing->hp = hp;
 	thing->id = ++next_thing_id;
-	thing->pos = pos;
-	thing->buoancy = REALF( 5.0f );
-	thing->mass = 20;
+	
+	thing->phys.pos = pos;
+	thing->phys.buoancy = REALF( 5.0f );
+	thing->phys.mass = 20;
 	
 	if ( parent )
 	{
@@ -131,7 +132,7 @@ static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type 
 			vel.y -= 0x7FF;
 		}
 		
-		t->vel = vel;
+		t->phys.vel = vel;
 		t->data.pt.type = type;
 	}
 }
@@ -170,8 +171,8 @@ static void add_explosion( Vec2 pos, Real vel_x, Real vel_y )
 		
 		if ( t )
 		{
-			t->vel.x = vel_x - ( prng_next() & 0x7FF ) + 1024;
-			t->vel.y = vel_y - ( prng_next() & 0xFFF );
+			t->phys.vel.x = vel_x - ( prng_next() & 0x7FF ) + 1024;
+			t->phys.vel.y = vel_y - ( prng_next() & 0xFFF );
 		}
 	}
 	
@@ -188,8 +189,8 @@ static Thing *add_aircraft( void )
 	{
 		t->angle = REALF( -PI/2 );
 		t->data.ac.num_bombs = 10;
-		t->mass = 50;
-		t->buoancy = REALF( AIRCRAFT_BUOANCY );
+		t->phys.mass = 50;
+		t->phys.buoancy = REALF( AIRCRAFT_BUOANCY );
 		
 		/*t->data.ac.is_heli = 1;*/
 	}
@@ -206,8 +207,8 @@ static Thing *add_gunship( void )
 	Thing *gs = add_thing( T_GUNSHIP, ship_pos, NULL );
 	if ( gs )
 	{
-		gs->vel.x = ship_vel; /* Set the ship in slow horizontal motion */
-		gs->buoancy = REALF( 25.0f );
+		gs->phys.vel.x = ship_vel; /* Set the ship in slow horizontal motion */
+		gs->phys.buoancy = REALF( 25.0f );
 		/* gs->mass = 100; */
 		add_thing( T_AAGUN, gun_pos, gs );
 	}
@@ -226,19 +227,19 @@ static Thing *add_battleship( void )
 	Thing *bs = add_thing( T_BATTLESHIP, ship_pos, NULL );
 	if ( bs )
 	{
-		bs->vel.x = ship_vel;
-		bs->buoancy = REALF( 25.0f );
+		bs->phys.vel.x = ship_vel;
+		bs->phys.buoancy = REALF( 25.0f );
 		/* bs->mass = 200; */
 		
-		add_thing( T_AAGUN, gun1_offset, bs )->mass = 1;
-		add_thing( T_AAGUN, gun2_offset, bs )->mass = 1;
-		add_thing( T_RADAR, radar_offset, bs )->mass = 1;
+		add_thing( T_AAGUN, gun1_offset, bs )->phys.mass = 1;
+		add_thing( T_AAGUN, gun2_offset, bs )->phys.mass = 1;
+		add_thing( T_RADAR, radar_offset, bs )->phys.mass = 1;
 	}
 	
 	return bs;
 }
 
-static void do_physics_step( Thing *t )
+static void do_physics_step( PhysicsBlob *blob )
 {
 	/* The equation for "Time Corrected Verlet" (TCV) would be:
 		Xi+1 = Xi + (Xi - Xi-1) * (DTi / DTi-1) + A * DTi * DTi
@@ -246,13 +247,13 @@ static void do_physics_step( Thing *t )
 		x = x0 + v * t + 1/2 * a * t * t
 	*/
 	
-	const Vec2 accel = t->accel;
-	Vec2 pos = t->pos, vel = t->vel;
+	
+	const Vec2 accel = blob->accel;
+	Vec2 pos = blob->pos, vel = blob->vel;
 	DReal dt = REALF( W_TIMESTEP );
 	
-	t->old_pos = pos;
-	t->vel = vel = v_addmul( vel, accel, dt );
-	t->pos = v_addmul( pos, vel, dt );
+	blob->vel = vel = v_addmul( vel, accel, dt );
+	blob->pos = v_addmul( pos, vel, dt );
 }
 
 /* only used by update_aircraft currently. should remove this */
@@ -281,11 +282,11 @@ static int collide_projectile_1( Thing *proj, Thing *victim )
 	Real r = REALF( 1 );
 	r <<= ( victim->type == T_GUNSHIP || victim->type == T_BATTLESHIP ) << 1;
 	
-	if ( victim->type < T_PROJECTILE && test_collision( &proj->pos, &victim->pos, r ) )
+	if ( victim->type < T_PROJECTILE && test_collision( &proj->phys.pos, &victim->phys.pos, r ) )
 	{
 		proj->hp = 0;
 		victim->hp -= REALF( PROJECTILE_DAMAGE );
-		add_smoke( proj->pos );
+		add_smoke( proj->phys.pos );
 		return 1;
 	}
 	
@@ -317,19 +318,19 @@ static void shoot_projectile( Thing *t, float angle )
 		return;
 	#endif
 	
-	p = add_thing( T_PROJECTILE, t->pos, NULL );
+	p = add_thing( T_PROJECTILE, t->phys.pos, NULL );
 	if ( p )
 	{
-		p->vel = sin_cos_add_mul( angle, t->vel, PROJECTILE_VEL );
+		p->phys.vel = sin_cos_add_mul( angle, t->phys.vel, PROJECTILE_VEL );
 		p->data.pr.dmg = ( t == WORLD.player ) ? DAMAGES_ENEMIES : DAMAGES_PLAYER;
 		
-		p->buoancy = REALF( PROJECTILE_BUOANCY );
-		p->mass = PROJECTILE_MASS;
+		p->phys.buoancy = REALF( PROJECTILE_BUOANCY );
+		p->phys.mass = PROJECTILE_MASS;
 		
 		#if 0
 		/* Rock ships as they fire */
 		if ( t->type == T_AAGUN )
-			displace_water( t->pos.x, REALF( 0.1 ) );
+			displace_water( t->phys.pos.x, REALF( 0.1 ) );
 		#endif
 	}
 }
@@ -346,24 +347,24 @@ static void update_aircraft( Thing *t )
 	systems_online = 1;
 	
 	/* Limit velocity (air drag like behaviour). Makes the aircraft easier to control */
-	t->vel = adjust_vector_length( t->vel, REALF(MAX_AIRCRAFT_VEL), 1 );
+	t->phys.vel = adjust_vector_length( t->phys.vel, REALF(MAX_AIRCRAFT_VEL), 1 );
 	
 	if ( systems_online )
 	{
 		/* Calculate acceleration */
 		if ( ac->throttle_on ) {
 			float power = ac->is_heli ? AIRCRAFT_ENGINE_POWER*0.25f : AIRCRAFT_ENGINE_POWER;
-			t->accel = sin_cos_add_mul( fangle, t->accel, power );
+			t->phys.accel = sin_cos_add_mul( fangle, t->phys.accel, power );
 		} else if ( ac->is_heli ) {
 			/*t->accel.x = 0;
 			t->accel.y = 0;*/
-			t->vel.x *= 0.99;
-			t->vel.y *= 0.9;
+			t->phys.vel.x *= 0.99;
+			t->phys.vel.y *= 0.9;
 		}
 	}
 	
 	if ( ac->is_heli ) {
-		t->accel.y >>= 1;
+		t->phys.accel.y >>= 1;
 	}
 	
 	t->data.ac.gun_timer -= REALF( W_TIMESTEP );
@@ -378,12 +379,12 @@ static void update_aircraft( Thing *t )
 		}
 	}
 	
-	if ( t->pos.y < REALF(MAX_AIRCRAFT_ALTITUDE) )
+	if ( t->phys.pos.y < REALF(MAX_AIRCRAFT_ALTITUDE) )
 	{
 		/* TODO: limit aircraft height in a more "natural" way
 		(the engine should stall above a certain height) */
-		t->pos.y = REALF(MAX_AIRCRAFT_ALTITUDE);
-		t->vel.y = abs( t->vel.y );
+		t->phys.pos.y = REALF(MAX_AIRCRAFT_ALTITUDE);
+		t->phys.vel.y = abs( t->phys.vel.y );
 	}
 }
 
@@ -424,24 +425,24 @@ static void slow_rotate( Real *angle, Vec2 const *self, Vec2 const *target, Real
 
 static void slow_rotate_thing( Thing *self, Vec2 *target, Real max_rot )
 {
-	slow_rotate( &self->angle, &self->pos, target, max_rot );
+	slow_rotate( &self->angle, &self->phys.pos, target, max_rot );
 }
 
 static void do_enemy_aircraft_logic( Thing *self )
 {
 	/* Just go forward by default */
-	Vec2 target = self->pos;
-	target.x += self->vel.x;
-	target.y += self->vel.y;
+	Vec2 target = self->phys.pos;
+	target.x += self->phys.vel.x;
+	target.y += self->phys.vel.y;
 	
-	if ( self->data.ac.is_heli && abs( self->vel.y ) > REALF( 1 ) ) {
-		target.y = self->pos.y - REALF( 20 );
+	if ( self->data.ac.is_heli && abs( self->phys.vel.y ) > REALF( 1 ) ) {
+		target.y = self->phys.pos.y - REALF( 20 );
 	}
 	
 	if ( WORLD.player )
 	{
 		/* Follow the player */
-		target = WORLD.player->pos;
+		target = WORLD.player->phys.pos;
 	}
 	
 	#if 1
@@ -495,12 +496,12 @@ static void spawn_enemies( void )
 			/* Attempt to place enemies outside view (to prevent ugly pop-ins) */
 			x %= REALF( W_WIDTH / 4 );
 			x += REALF( W_WIDTH / 2 );
-			x += WORLD.player->pos.x;
+			x += WORLD.player->phys.pos.x;
 		}
 		
 		t = spawn_funcs[ prng_next() & 0x3 ]();
 		if ( t )
-			t->pos.x = x;
+			t->phys.pos.x = x;
 	}
 }
 
@@ -610,28 +611,28 @@ void update_world( void )
 		Real water_h;
 		
 		/* Reset acceleration */
-		t->accel.x = 0;
-		t->accel.y = REALF( W_GRAVITY );
+		t->phys.accel.x = 0;
+		t->phys.accel.y = REALF( W_GRAVITY );
 		
 		t->age += REALF( W_TIMESTEP );
 		
-		water_h = get_water_height( t->pos.x );
+		water_h = get_water_height( t->phys.pos.x );
 		
-		if ( t->pos.y > water_h )
+		if ( t->phys.pos.y > water_h )
 		{
 			Real water_friction = REALF( 0.94 );
 			
 			t->underwater_time += REALF( W_TIMESTEP );
-			t->accel.y -= t->buoancy;
+			t->phys.accel.y -= t->phys.buoancy;
 			
-			t->vel.x = REAL_MUL( t->vel.x, water_friction );
-			t->vel.y = REAL_MUL( t->vel.y, water_friction );
+			t->phys.vel.x = REAL_MUL( t->phys.vel.x, water_friction );
+			t->phys.vel.y = REAL_MUL( t->phys.vel.y, water_friction );
 			
 			if ( t->type != T_PARTICLE ) {
-				if ( t->pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
+				if ( t->phys.pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
 					t->hp = 0;
 			} else {
-				t->pos.y = water_h;
+				t->phys.pos.y = water_h;
 			}
 		}
 		else
@@ -651,7 +652,7 @@ void update_world( void )
 			
 			case T_GUNSHIP:
 			case T_BATTLESHIP:
-				t->angle = measure_water_surface_angle( t->pos.x );
+				t->angle = measure_water_surface_angle( t->phys.pos.x );
 				break;
 			
 			case T_AAGUN:
@@ -659,7 +660,7 @@ void update_world( void )
 				{
 					/* Aim the gun at player */
 					Real r = REALF( W_TIMESTEP * AAGUN_ROTATE_SPEED );
-					slow_rotate_thing( t, &WORLD.player->pos, r );
+					slow_rotate_thing( t, &WORLD.player->phys.pos, r );
 					
 					/* Shoot all the time */
 					t->data.aa.gun_timer += REALF( W_TIMESTEP );
@@ -690,7 +691,7 @@ void update_world( void )
 				if ( ( prng_next() & 0x3 ) == 0 )
 				{
 					if ( !t->underwater_time )
-						add_smoke( t->pos );
+						add_smoke( t->phys.pos );
 				}
 				
 				t->angle += REALF( 5 * W_TIMESTEP );
@@ -726,32 +727,32 @@ void update_world( void )
 				rw_pos.y = rx * m1 + ry * m3;
 				
 				/* Follow parent */
-				t->pos = t->parent->pos;
-				t->pos.x += rw_pos.x;
-				t->pos.y += rw_pos.y;
-				t->vel = t->parent->vel;
-				t->accel = t->parent->accel;
+				t->phys.pos = t->parent->phys.pos;
+				t->phys.pos.x += rw_pos.x;
+				t->phys.pos.y += rw_pos.y;
+				t->phys.vel = t->parent->phys.vel;
+				t->phys.accel = t->parent->phys.accel;
 			}
 		}
 		else
 		{
 			/* Apply physics to everything */
-			do_physics_step( t );
+			do_physics_step( &t->phys );
 			
-			if ( t->type != T_PARTICLE && t->pos.y > water_h )
+			if ( t->type != T_PARTICLE && t->phys.pos.y > water_h )
 			{
 				const float thickness = 5000; /* larger value makes water move less */
 				const float falloff = 2; /* falloff distance so that objects deep underwater don't make the surface move */
-				Real f = REAL_MUL( REALF( falloff ) - MIN( t->pos.y - water_h, REALF( falloff ) ), t->mass * t->vel.y ) / ( thickness * falloff );
-				displace_water( t->pos.x, f );
+				Real f = REAL_MUL( REALF( falloff ) - MIN( t->phys.pos.y - water_h, REALF( falloff ) ), t->phys.mass * t->phys.vel.y ) / ( thickness * falloff );
+				displace_water( t->phys.pos.x, f );
 			}
 		}
 		
 		/* Wrap around world edges */
-		t->pos.x = ( REALF( W_WIDTH ) + t->pos.x ) % REALF( W_WIDTH );
+		t->phys.pos.x = ( REALF( W_WIDTH ) + t->phys.pos.x ) % REALF( W_WIDTH );
 		
 		/* Kill things that sink too deep */
-		if ( t->pos.y > REALF( W_WATER_DEATH_LEVEL ) )
+		if ( t->phys.pos.y > REALF( W_WATER_DEATH_LEVEL ) )
 			t->hp = 0;
 		
 		#if ENABLE_GODMODE
@@ -765,7 +766,7 @@ void update_world( void )
 			if ( t->type < T_PROJECTILE )
 			{
 				/* Throw pieces of debris */
-				add_explosion( t->pos, t->vel.x, t->vel.y );
+				add_explosion( t->phys.pos, t->phys.vel.x, t->phys.vel.y );
 				
 				#if 0
 				if ( t->type == T_GUNSHIP || t->type == T_BATTLESHIP )
@@ -775,8 +776,8 @@ void update_world( void )
 					for( k=0; k<5; k++ )
 					{
 						Vec2 pos;
-						pos.x = t->pos.x - 1024 + ( prng_next() & 0x7FF );
-						pos.y = get_water_height( t->pos.x );
+						pos.x = t->phys.pos.x - 1024 + ( prng_next() & 0x7FF );
+						pos.y = get_water_height( t->phys.pos.x );
 					}
 				}
 				#endif

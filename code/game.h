@@ -70,22 +70,29 @@ struct ThingData {
 	Projectile pr;
 };
 
+typedef struct PhysicsBlob {
+	Vec2 pos;
+	Vec2 vel;
+	Vec2 accel;
+	Real buoancy;
+	int mass; /* all masses should be in range 1 .. 255. Mass must not ever be 0! */
+	/*
+	Real radius;
+	(a pointer to parent PhysicsBlob? handle attacked blobs in the physics code?)
+	*/
+} PhysicsBlob;
+
 struct Thing {
 	ThingType type;
 	ThingID id; /* unique thing ID, never the same */
 	Real hp;
-	Vec2 old_pos;
-	Vec2 pos;
-	Vec2 vel;
-	Vec2 accel;
+	PhysicsBlob phys;
 	Real angle;
 	Thing *parent; /* If parent is non-NULL, then pos and old_pos are relative to parent */
 	ThingID parent_id; /* If parent_id != parent->id, then we know that parent has died */
 	Vec2 rel_pos; /* Relative position to parent */
 	U32 age; /* unsigned Real; seconds */
 	U32 underwater_time;
-	Real buoancy;
-	int mass; /* all masses should be in range 1 .. 255. Mass must not ever be 0! */
 	ThingData data;
 };
 

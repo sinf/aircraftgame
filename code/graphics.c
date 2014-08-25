@@ -153,8 +153,8 @@ static GfxBlob get_particle_blob( Thing *thing )
 	
 	blob.mode = BLOB_SHARP;
 	blob.color = RGBA_32( g, g, g, a );
-	blob.x = thing->pos.x;
-	blob.y = thing->pos.y;
+	blob.x = thing->phys.pos.x;
+	blob.y = thing->phys.pos.y;
 	blob.scale_x = w;
 	blob.scale_y = h;
 	
@@ -230,8 +230,8 @@ static void render_world_fg( void )
 	for( n=0; n<WORLD.num_things; n++ )
 	{
 		Thing *t = WORLD.things + n;
-		Real x = t->pos.x;
-		Real y = t->pos.y;
+		Real x = t->phys.pos.x;
+		Real y = t->phys.pos.y;
 		Real yaw = t->angle;
 		Real roll = 0;
 		ModelID mdl = BAD_MODEL_ID;
@@ -424,8 +424,8 @@ void render( void )
 	
 	if ( WORLD.player )
 	{
-		eye_x = WORLD.player->pos.x;
-		eye_y = WORLD.player->pos.y;
+		eye_x = WORLD.player->phys.pos.x;
+		eye_y = WORLD.player->phys.pos.y;
 	}
 	
 	mat_push();
