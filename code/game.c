@@ -190,6 +190,8 @@ static Thing *add_aircraft( void )
 		t->data.ac.num_bombs = 10;
 		t->mass = 50;
 		t->buoancy = REALF( AIRCRAFT_BUOANCY );
+		
+		/*t->data.ac.is_heli = 1;*/
 	}
 	
 	return t;
@@ -323,6 +325,12 @@ static void shoot_projectile( Thing *t, float angle )
 		
 		p->buoancy = REALF( PROJECTILE_BUOANCY );
 		p->mass = PROJECTILE_MASS;
+		
+		#if 0
+		/* Rock ships as they fire */
+		if ( t->type == T_AAGUN )
+			displace_water( t->pos.x, REALF( 0.1 ) );
+		#endif
 	}
 }
 

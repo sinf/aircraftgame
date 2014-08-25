@@ -199,31 +199,31 @@ static void draw_water( void )
 	draw_triangle_strip( num_verts, verts );
 }
 
-#if 0
-static void draw_sky( void )
+#define MAX_MODEL_INST 512
+static float model_inst_matr[NUM_MODELS][MAX_MODEL_INST][16] = {{{0}}};
+static unsigned model_inst_count[NUM_MODELS] = {0};
+
+static void push_model_mat( ModelID m )
 {
-	draw_box(
-		0, REALF( W_WATER_LEVEL - W_HEIGHT - 64 ),
-		REALF( W_WIDTH ), REALF( W_HEIGHT + 128 ),
-		RGB_32( 0xd8, 0xd8, 0xac )
-	);
+	if ( model_inst_count[m] < MAX_MODEL_INST ) {
+		unsigned i = model_inst_count[m]++;
+		mat_store( model_inst_matr[m][i] );
+	}
 }
 
-static void render_world_bg( void )
+static void flush_models( void )
 {
-	/* This clears the framebuffer for the first time */
-	draw_sky();
+	int n;
+	for( n=0; n<NUM_MODELS; n++ ) {
+		draw_models( model_inst_count[n], n, &model_inst_matr[n][0][0] );
+		model_inst_count[n] = 0;
+	}
 }
-#endif
 
 static void render_world_fg( void )
 {
-	#define MAX_MODEL_INST 512
 	#define MAX_BLOBS 32000
-	float matr[NUM_MODELS][MAX_MODEL_INST][16];
 	GfxBlob blobs[MAX_BLOBS];
-	
-	unsigned num_inst[NUM_MODELS] = {0};
 	unsigned num_blobs = 0;
 	unsigned n;
 	
@@ -267,6 +267,8 @@ static void render_world_fg( void )
 				roll = t->age;
 				yaw = REALF( -PI / 2 );
 				mdl = M_RADAR;
+				if ( t->parent )
+					yaw += t->parent->angle;
 				break;
 			
 			case T_BATTLESHIP:
@@ -301,50 +303,52 @@ static void render_world_fg( void )
 		
 		if ( mdl != BAD_MODEL_ID )
 		{
-			if ( num_inst[mdl] < MAX_MODEL_INST )
-			{	
+			mat_push();
+			mat_translate( x, y, 0 );
+			{
 				mat_push();
-				mat_translate( x, y, 0 );
 				mat_rotate( 2, REALTOF( yaw ) );
-				
-				mat_push();
-				mat_rotate( 0, REALTOF( roll ) );
-				mat_store( matr[mdl][num_inst[mdl]++] );
-				mat_pop();
-				
-				if ( t->type == T_AIRCRAFT && !is_heli && t->data.ac.throttle_on ) {
-					if ( num_inst[M_AIRCRAFT_FLAME] < MAX_MODEL_INST ) {
-						mat_store( matr[M_AIRCRAFT_FLAME][num_inst[M_AIRCRAFT_FLAME]++] );
-					}
-				}
-				
-				mat_pop();
-				
-				if ( is_heli && num_inst[M_HELI_ROTOR] < MAX_MODEL_INST ) {
+				{
 					mat_push();
-					mat_translate( x, y, 0 );
+					{
+						mat_rotate( 0, REALTOF( roll ) );
+						push_model_mat( mdl );
+					}
+					mat_pop();
+					
+					if ( t->type == T_AIRCRAFT && !is_heli && t->data.ac.throttle_on )
+						push_model_mat( M_AIRCRAFT_FLAME );
+				}
+				mat_pop();
+				
+				if ( is_heli ) {
 					mat_rotate( 2, REALTOF( yaw ) );
 					mat_rotate( 0, REALTOF( roll ) );
-					mat_rotate( 1, REALTOF( 16 * t->age % REALF( 2 * PI ) ) );
-					mat_store( matr[M_HELI_ROTOR][num_inst[M_HELI_ROTOR]++] );
+					
+					/* The main rotor */
+					mat_push();
+					{
+						mat_translate( REALF(0.2), REALF(0.1), 0 );
+						mat_rotate( 1, REALTOF( 16 * t->age % REALF( 2 * PI ) ) );
+						push_model_mat( M_HELI_ROTOR );
+					}
 					mat_pop();
+					
+					/* Small rotor in the rear */
+					mat_translate( REALF(-1.2), REALF(0.2), 0 );
+					mat_rotate( 2, REALTOF( -16 * t->age % REALF( 2 * PI ) ) );
+					mat_scale( 0.5, 0.5, 0.5 );
+					mat_rotate( 0, -PI/2 );
+					push_model_mat( M_HELI_ROTOR );
 				}
 			}
+			mat_pop();
 		}
-		
-		#if 0
-		if ( t->type != T_PARTICLE && t->type != T_PROJECTILE )
-			draw_crosshair( x, y );
-		#endif
 	}
 	
 	ASSERT( num_blobs < MAX_BLOBS );
 	
-	for( n=0; n<NUM_MODELS; n++ ) {
-		ASSERT( num_inst[n] < MAX_MODEL_INST );
-		draw_models( num_inst[n], n, &matr[n][0][0] );
-	}
-	
+	flush_models();
 	draw_blobs( num_blobs, blobs );
 	
 	#if DRAW_CLOUDS

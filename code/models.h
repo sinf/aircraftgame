@@ -18,7 +18,7 @@ typedef enum {
 #define BAD_MODEL_ID NUM_MODELS
 
 /* Maximum vertices per ANY mesh */
-#define MAX_MODEL_VERTS 64
+#define MAX_MODEL_VERTS 40
 
 /* MODEL_INFO_T flags */
 #define F_NONE 0
