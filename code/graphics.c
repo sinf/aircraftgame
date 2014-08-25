@@ -69,6 +69,8 @@ static void generate_one_cloud( GfxBlob out[], unsigned num_blobs )
 	Vec2 p;
 	Real a;
 	
+	const unsigned g = 240; /* 220 + prng_next() % 32; */
+	
 	p.x = prng_next() % REALF( W_WIDTH );
 	p.y = REALF( W_WATER_LEVEL - W_HEIGHT + 5 );
 	a = prng_next() % tau;
@@ -78,7 +80,8 @@ static void generate_one_cloud( GfxBlob out[], unsigned num_blobs )
 		DReal step_length = min_step + prng_next() % ( max_step - min_step );
 		Vec2 dir = v_sincos( a = ( a + prng_next() % max_rotation - max_rotation / 2 + tau ) % tau );
 		
-		out[blob].color = RGBA_32( 255, 255, 255, 40 );
+		out[blob].mode = BLOB_FUZZY;
+		out[blob].color = RGBA_32( g, g, g, 40 );
 		out[blob].x = p.x;
 		out[blob].y = p.y;
 		out[blob].scale_x = r;
@@ -148,6 +151,7 @@ static GfxBlob get_particle_blob( Thing *thing )
 	w = PARTICLE_SIZE[type << 1];
 	h = PARTICLE_SIZE[(type << 1) + 1];
 	
+	blob.mode = BLOB_SHARP;
 	blob.color = RGBA_32( g, g, g, a );
 	blob.x = thing->pos.x;
 	blob.y = thing->pos.y;
@@ -231,6 +235,7 @@ static void render_world_fg( void )
 		Real yaw = t->angle;
 		Real roll = 0;
 		ModelID mdl = BAD_MODEL_ID;
+		int is_heli = 0;
 		
 		if ( !object_is_visible( x ) )
 			continue;
@@ -239,7 +244,7 @@ static void render_world_fg( void )
 		{
 			case T_AIRCRAFT:
 				roll = yaw + REALF( PI );
-				mdl = M_AIRCRAFT;
+				mdl = ( is_heli = t->data.ac.is_heli ) ? M_HELI_BODY : M_AIRCRAFT;
 				break;
 			
 			case T_GUNSHIP:
@@ -297,25 +302,33 @@ static void render_world_fg( void )
 		if ( mdl != BAD_MODEL_ID )
 		{
 			if ( num_inst[mdl] < MAX_MODEL_INST )
-			{
+			{	
 				mat_push();
-				
 				mat_translate( x, y, 0 );
 				mat_rotate( 2, REALTOF( yaw ) );
-				mat_push();
 				
+				mat_push();
 				mat_rotate( 0, REALTOF( roll ) );
 				mat_store( matr[mdl][num_inst[mdl]++] );
-				
 				mat_pop();
 				
-				if ( t->type == T_AIRCRAFT && t->data.ac.throttle_on ) {
+				if ( t->type == T_AIRCRAFT && !is_heli && t->data.ac.throttle_on ) {
 					if ( num_inst[M_AIRCRAFT_FLAME] < MAX_MODEL_INST ) {
 						mat_store( matr[M_AIRCRAFT_FLAME][num_inst[M_AIRCRAFT_FLAME]++] );
 					}
 				}
 				
 				mat_pop();
+				
+				if ( is_heli && num_inst[M_HELI_ROTOR] < MAX_MODEL_INST ) {
+					mat_push();
+					mat_translate( x, y, 0 );
+					mat_rotate( 2, REALTOF( yaw ) );
+					mat_rotate( 0, REALTOF( roll ) );
+					mat_rotate( 1, REALTOF( 16 * t->age % REALF( 2 * PI ) ) );
+					mat_store( matr[M_HELI_ROTOR][num_inst[M_HELI_ROTOR]++] );
+					mat_pop();
+				}
 			}
 		}
 		
@@ -332,10 +345,10 @@ static void render_world_fg( void )
 		draw_models( num_inst[n], n, &matr[n][0][0] );
 	}
 	
-	draw_blobs( num_blobs, blobs, BLOB_SHARP );
+	draw_blobs( num_blobs, blobs );
 	
 	#if DRAW_CLOUDS
-	draw_blobs( NUM_CLOUD_BLOBS, cloud_blobs, BLOB_FUZZY );
+	draw_blobs( NUM_CLOUD_BLOBS, cloud_blobs );
 	#endif
 }
 
@@ -364,6 +377,7 @@ static void draw_wrapped( Real eye_x, void (*draw_stuff)(void) )
 		mat_translate( REALF( -W_WIDTH ), 0, 0 );
 		draw_stuff();
 		mat_pop();
+		
 	} else if ( view_limit_east > ww ) {
 		
 		clip_test_x0 = view_limit_west;

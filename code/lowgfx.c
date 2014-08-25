@@ -165,6 +165,7 @@ void set_wireframe( int on )
 
 void draw_models( unsigned num_models, ModelID m, const float *matr )
 {
+	int wire = 0;
 	U8 num_indices = MODEL_INFO[m].num_indices;
 	U8 const *index_p = model_indices_unpacked[m];
 	unsigned n;
@@ -173,6 +174,8 @@ void draw_models( unsigned num_models, ModelID m, const float *matr )
 	glVertexPointer( MODEL_DIMENSIONS( MODEL_INFO[m] ), GL_INT, 0, model_vertices_unpacked[m] );
 	
 	glPushMatrix();
+	
+	if ( wire ) glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 	
 	for( n=0; n<num_models; n++ ) {
 		glLoadMatrixf( matr + 16 * n );
@@ -183,6 +186,8 @@ void draw_models( unsigned num_models, ModelID m, const float *matr )
 		}
 	}
 	
+	if ( wire ) glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+	
 	glPopMatrix();
 }
 
@@ -191,9 +196,8 @@ struct BlobVertex {
 	float s, t;
 };
 
-void draw_blobs( unsigned num_blobs, const GfxBlob blobs[], BlobMode mode )
+void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] )
 {
-	const float t = mode == BLOB_FUZZY ? 0.5f : 0;
 	struct BlobVertex (*quads)[4];
 	U32 *colors;
 	unsigned n;
@@ -202,7 +206,7 @@ void draw_blobs( unsigned num_blobs, const GfxBlob blobs[], BlobMode mode )
 	colors = alloca( num_blobs * 4 * 4 );
 	
 	for( n=0; n<num_blobs; n++ ) {
-		
+		const float t = blobs[n].mode == BLOB_FUZZY ? 0.5f : 0;
 		float rx = blobs[n].scale_x * 0.5f;
 		float ry = blobs[n].scale_y * 0.5f;
 		float west = blobs[n].x - rx;

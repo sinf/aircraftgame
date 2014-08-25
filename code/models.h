@@ -10,13 +10,15 @@ typedef enum {
 	M_DEBRIS,
 	M_AAGUN_BARREL,
 	M_AIRCRAFT_FLAME,
+	M_HELI_BODY,
+	M_HELI_ROTOR,
 	NUM_MODELS
 } ModelID;
 
 #define BAD_MODEL_ID NUM_MODELS
 
 /* Maximum vertices per ANY mesh */
-#define MAX_MODEL_VERTS 32
+#define MAX_MODEL_VERTS 64
 
 /* MODEL_INFO_T flags */
 #define F_NONE 0

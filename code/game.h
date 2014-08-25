@@ -21,6 +21,7 @@ struct Aircraft {
 	int gun_trigger;
 	int throttle_on;
 	int num_bombs;
+	int is_heli;
 };
 
 struct AAGun {

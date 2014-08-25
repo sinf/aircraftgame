@@ -14,8 +14,13 @@ void mat_push( void );
 void mat_pop( void );
 void mat_store( float dst[16] );
 
+typedef enum {
+	BLOB_SHARP,
+	BLOB_FUZZY
+} BlobMode;
+
 typedef struct GfxBlob {
-	/* int graphic; */
+	BlobMode mode;
 	U32 color;
 	float x, y;
 	float scale_x, scale_y;
@@ -27,13 +32,8 @@ typedef struct GfxVertex {
 	U32 color;
 } GfxVertex;
 
-typedef enum {
-	BLOB_SHARP,
-	BLOB_FUZZY
-} BlobMode;
-
 void draw_models( unsigned num_models, ModelID model_id, const float *matr4x4 );
-void draw_blobs( unsigned num_blobs, const GfxBlob blobs[], BlobMode mode );
+void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] );
 void draw_triangle_strip( unsigned num_verts, const GfxVertex verts[] );
 
 #endif

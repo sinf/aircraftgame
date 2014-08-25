@@ -5,8 +5,8 @@
 #include "game.h"
 
 #define ENABLE_GODMODE 1
-#define ENABLE_ENEMY_AIRCRAFT 0
-#define DISARM_ENEMIES 1
+#define ENABLE_ENEMY_AIRCRAFT 1
+#define DISARM_ENEMIES 0
 
 World WORLD = {0};
 
@@ -178,6 +178,7 @@ static void add_explosion( Vec2 pos, Real vel_x, Real vel_y )
 	displace_water( pos.x, calc_explos_water_shock( pos.y ) );
 }
 
+/* $add_aircraft */
 static Thing *add_aircraft( void )
 {
 	Vec2 zero = REAL_VEC( 0, 0 );
@@ -342,8 +343,19 @@ static void update_aircraft( Thing *t )
 	if ( systems_online )
 	{
 		/* Calculate acceleration */
-		if ( ac->throttle_on )
-			t->accel = sin_cos_add_mul( fangle, t->accel, AIRCRAFT_ENGINE_POWER );
+		if ( ac->throttle_on ) {
+			float power = ac->is_heli ? AIRCRAFT_ENGINE_POWER*0.25f : AIRCRAFT_ENGINE_POWER;
+			t->accel = sin_cos_add_mul( fangle, t->accel, power );
+		} else if ( ac->is_heli ) {
+			/*t->accel.x = 0;
+			t->accel.y = 0;*/
+			t->vel.x *= 0.99;
+			t->vel.y *= 0.9;
+		}
+	}
+	
+	if ( ac->is_heli ) {
+		t->accel.y >>= 1;
 	}
 	
 	t->data.ac.gun_timer -= REALF( W_TIMESTEP );
@@ -414,6 +426,10 @@ static void do_enemy_aircraft_logic( Thing *self )
 	target.x += self->vel.x;
 	target.y += self->vel.y;
 	
+	if ( self->data.ac.is_heli && abs( self->vel.y ) > REALF( 1 ) ) {
+		target.y = self->pos.y - REALF( 20 );
+	}
+	
 	if ( WORLD.player )
 	{
 		/* Follow the player */
@@ -433,6 +449,15 @@ static void do_enemy_aircraft_logic( Thing *self )
 
 #if !ENABLE_ENEMY_AIRCRAFT
 static Thing *get_null( void ) { return NULL; }
+#else
+static Thing *add_heli( void )
+{
+	Thing *t = add_aircraft();
+	if ( t ) {
+		t->data.ac.is_heli = 1;
+	}
+	return t;
+}
 #endif
 
 static void spawn_enemies( void )
@@ -442,7 +467,7 @@ static void spawn_enemies( void )
 	SpawnFunc spawn_funcs[] = {
 		#if ENABLE_ENEMY_AIRCRAFT
 		add_aircraft,
-		add_aircraft,
+		add_heli,
 		#else
 		get_null,
 		get_null,
