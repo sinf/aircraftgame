@@ -1,3 +1,4 @@
+#include <string.h>
 #include "system.h"
 #include "support.h"
 
@@ -30,6 +31,15 @@ Vec2 sin_cos_add_mul( float t, Vec2 v, float m )
 	return v;
 }
 
+static Thing *add_player( void )
+{
+	Thing *t = add_aircraft();
+	#if ENABLE_GODMODE
+	t->can_not_die = 1;
+	#endif
+	return t;
+}
+
 void init_world( void )
 {
 	WORLD.current_tick = 0;
@@ -37,7 +47,7 @@ void init_world( void )
 	
 	WORLD.enemy_spawn_timer = 0;
 	WORLD.num_things = 0;
-	WORLD.player = add_aircraft();
+	WORLD.player = add_player();
 	
 	#if 0
 	add_aircraft();
@@ -192,6 +202,8 @@ static Thing *add_gunship( void )
 	{
 		gs->phys.vel.x = ship_vel; /* Set the ship in slow horizontal motion */
 		gs->phys.buoancy = REALF( 25.0f );
+		gs->tilts_like_a_boat = 1;
+		
 		/* gs->mass = 100; */
 		add_thing( T_AAGUN, gun_pos, gs );
 	}
@@ -212,6 +224,7 @@ static Thing *add_battleship( void )
 	{
 		bs->phys.vel.x = ship_vel;
 		bs->phys.buoancy = REALF( 25.0f );
+		bs->tilts_like_a_boat = 1;
 		/* bs->mass = 200; */
 		
 		add_thing( T_AAGUN, gun1_offset, bs )->phys.mass = 1;
@@ -596,6 +609,10 @@ static void update_things( World *world )
 	world->things = things_to;
 	world->num_things = 0;
 	
+	/* maps old index to new index */
+	unsigned short thing_index_remap[MAX_THINGS];
+	memset( thing_index_remap, 0, sizeof(thing_index_remap) );
+	
 	for( n=0; n<num_old_things; n++ )
 	{
 		const int is_player = ( things_from + n ) == old_player;
@@ -637,18 +654,15 @@ static void update_things( World *world )
 				t.hp = 0;
 		}
 		
+		if ( t.tilts_like_a_boat ) {
+			t.angle = measure_water_surface_angle( t.phys.pos.x );
+		}
+		
 		switch( t.type )
 		{
-			/* Animate motion here */
-			
 			case T_AIRCRAFT:
 				if ( !is_player ) do_enemy_aircraft_logic( &t );
 				update_aircraft( &t, is_player );
-				break;
-			
-			case T_GUNSHIP:
-			case T_BATTLESHIP:
-				t.angle = measure_water_surface_angle( t.phys.pos.x );
 				break;
 			
 			case T_AAGUN:
@@ -669,10 +683,6 @@ static void update_things( World *world )
 				break;
 			
 			case T_PROJECTILE:
-				/*
-				if ( t->underwater_time )
-					t->hp = 0;
-				*/
 				collide_projectile( num_old_things, things_from, &t, old_player );
 				break;
 			
@@ -684,7 +694,6 @@ static void update_things( World *world )
 					if ( !t.underwater_time )
 						add_smoke( t.phys.pos );
 				}
-				
 				t.angle += REALF( 5 * W_TIMESTEP );
 				break;
 			
@@ -692,44 +701,11 @@ static void update_things( World *world )
 				break;
 		}
 		
-		if ( t.parent )
+		if ( !t.parent )
 		{
-			if ( t.parent_id != t.parent->id )
-			{
-				/* Parent has died. Just die */
-				t.hp = 0;
-			}
-			else
-			{
-				float m0, m1, m2, m3;
-				float rx, ry;
-				float a = REALTOF( t.parent->angle );
-				Vec2 rw_pos; /* relative position in world space */
-				
-				m0 = cosf( a );
-				m1 = sinf( a );
-				m2 = -m1;
-				m3 = m0;
-				
-				rx = t.rel_pos.x;
-				ry = t.rel_pos.y;
-				
-				rw_pos.x = rx * m0 + ry * m2;
-				rw_pos.y = rx * m1 + ry * m3;
-				
-				/* Follow parent */
-				t.phys.pos = t.parent->phys.pos;
-				t.phys.pos.x += rw_pos.x;
-				t.phys.pos.y += rw_pos.y;
-				t.phys.vel = t.parent->phys.vel;
-				t.phys.accel = t.parent->phys.accel;
-			}
-		}
-		else
-		{
-			/* Apply physics to everything */
 			do_physics_step( &t.phys );
 			
+			/* Water splashing effect */
 			if ( t.type != T_PARTICLE && t.phys.pos.y > water_h )
 			{
 				const float thickness = 5000; /* larger value makes water move less */
@@ -746,19 +722,16 @@ static void update_things( World *world )
 		if ( t.phys.pos.y > REALF( W_WATER_DEATH_LEVEL ) )
 			t.hp = 0;
 		
-		#if ENABLE_GODMODE
-		if ( world->player )
-			world->player->hp = REALF( 100 );
-		#endif
-		
-		if ( t.hp > 0 ) {
+		if ( t.hp > 0 || t.can_not_die ) {
 			if ( world->num_things < MAX_THINGS )
 			{
-				Thing *dst = things_to + world->num_things++;
-				*dst = t;
+				unsigned index = world->num_things++;
+				
+				thing_index_remap[n] = index + 1;
+				things_to[index] = t;
 				
 				if ( is_player ) {
-					world->player = dst;
+					world->player = &things_to[index];
 				}
 			}
 		} else {
@@ -786,6 +759,49 @@ static void update_things( World *world )
 					}
 				}
 				#endif
+			}
+		}
+	}
+	
+	for( n=0; n<world->num_things; n++ )
+	{
+		Thing *t = things_to + n;
+		
+		if ( t->parent )
+		{
+			unsigned old_parent_index = t->parent - things_from;
+			unsigned parent_index = thing_index_remap[old_parent_index];
+			
+			if ( !parent_index ) {
+				/* Parent has died */
+				t->hp = 0;
+				t->parent = NULL;
+			} else {
+				float m0, m1, m2, m3;
+				float rx, ry;
+				float a;
+				Vec2 rw_pos; /* relative position in world space */
+				
+				t->parent = things_to + parent_index - 1;
+				a = REALTOF( t->parent->angle );
+				
+				m0 = cosf( a );
+				m1 = sinf( a );
+				m2 = -m1;
+				m3 = m0;
+				
+				rx = t->rel_pos.x;
+				ry = t->rel_pos.y;
+				
+				rw_pos.x = rx * m0 + ry * m2;
+				rw_pos.y = rx * m1 + ry * m3;
+				
+				/* Follow parent */
+				t->phys.pos = t->parent->phys.pos;
+				t->phys.pos.x += rw_pos.x;
+				t->phys.pos.y += rw_pos.y;
+				t->phys.vel = t->parent->phys.vel;
+				t->phys.accel = t->parent->phys.accel;
 			}
 		}
 	}

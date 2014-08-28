@@ -93,8 +93,9 @@ struct Thing {
 	U32 age; /* unsigned Real; seconds */
 	U32 underwater_time;
 	ThingData data;
-	
 	unsigned dies_of_old_age : 1;
+	unsigned tilts_like_a_boat : 1;
+	unsigned can_not_die : 1;
 	U32 max_life_time; /* unsigned Real; seconds */
 };
 
