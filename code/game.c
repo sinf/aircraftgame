@@ -114,6 +114,9 @@ static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type 
 		
 		t->phys.vel = vel;
 		t->data.pt.type = type;
+		
+		t->dies_of_old_age = 1;
+		t->max_life_time = REALF( MAX_PARTICLE_TIME );
 	}
 }
 
@@ -629,6 +632,11 @@ static void update_things( World *world )
 			t.underwater_time = 0;
 		}
 		
+		if ( t.dies_of_old_age ) {
+			if ( t.age >= t.max_life_time )
+				t.hp = 0;
+		}
+		
 		switch( t.type )
 		{
 			/* Animate motion here */
@@ -666,11 +674,6 @@ static void update_things( World *world )
 					t->hp = 0;
 				*/
 				collide_projectile( num_old_things, things_from, &t, old_player );
-				break;
-			
-			case T_PARTICLE:
-				if ( t.age >= REALF( MAX_PARTICLE_TIME ) )
-					t.hp = 0; /* Die of old age */
 				break;
 			
 			case T_DEBRIS:
