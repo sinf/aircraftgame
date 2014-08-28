@@ -72,7 +72,6 @@ static void *list_append( void *list_base, unsigned *num_items, unsigned item_si
 
 static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 {
-	static ThingID next_thing_id = 0;
 	Thing *thing;
 	Real hp = REALF( MAX_THING_HP );
 	
@@ -86,7 +85,6 @@ static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 	
 	thing->type = type;
 	thing->hp = hp;
-	thing->id = ++next_thing_id;
 	
 	thing->phys.pos = pos;
 	thing->phys.buoancy = REALF( 5.0f );
@@ -95,7 +93,6 @@ static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 	if ( parent )
 	{
 		thing->parent = parent;
-		thing->parent_id = parent->id;
 		thing->rel_pos = pos;
 	}
 	
@@ -126,6 +123,7 @@ static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type 
 		t->data.pt.type = type;
 		
 		t->dies_of_old_age = 1;
+		t->phys.mass = 1;
 		t->max_life_time = REALF( MAX_PARTICLE_TIME );
 	}
 }
@@ -602,7 +600,7 @@ static void update_things( World *world )
 	Thing* const things_from = world->things_buf[tick_bit];
 	Thing* const things_to = world->things_buf[!tick_bit];
 	
-	Thing *old_player = world->player;
+	Thing* const old_player = world->player;
 	const unsigned num_old_things = world->num_things;
 	unsigned n;
 	
@@ -619,14 +617,14 @@ static void update_things( World *world )
 		Thing t = things_from[n];
 		Real water_h;
 		
+		t.age += REALF( W_TIMESTEP );
+		
 		/* Reset acceleration */
 		t.phys.accel.x = 0;
 		t.phys.accel.y = REALF( W_GRAVITY );
 		
-		t.age += REALF( W_TIMESTEP );
-		
+		/* Water physics */
 		water_h = get_water_height( t.phys.pos.x );
-		
 		if ( t.phys.pos.y > water_h )
 		{
 			Real water_friction = REALF( 0.94 );
@@ -649,11 +647,13 @@ static void update_things( World *world )
 			t.underwater_time = 0;
 		}
 		
+		/* Self-destruct timer */
 		if ( t.dies_of_old_age ) {
 			if ( t.age >= t.max_life_time )
 				t.hp = 0;
 		}
 		
+		/* Fake physics for objects that float on water */
 		if ( t.tilts_like_a_boat ) {
 			t.angle = measure_water_surface_angle( t.phys.pos.x );
 		}
@@ -706,7 +706,7 @@ static void update_things( World *world )
 			do_physics_step( &t.phys );
 			
 			/* Water splashing effect */
-			if ( t.type != T_PARTICLE && t.phys.pos.y > water_h )
+			if ( t.phys.mass >= WATER_SPLASH_MIN_MASS && t.phys.pos.y > water_h )
 			{
 				const float thickness = 5000; /* larger value makes water move less */
 				const float falloff = 2; /* falloff distance so that objects deep underwater don't make the surface move */
@@ -723,23 +723,17 @@ static void update_things( World *world )
 			t.hp = 0;
 		
 		if ( t.hp > 0 || t.can_not_die ) {
+			/* Thing keeps on living. Write to the Thing list of the next frame */
+			
 			if ( world->num_things < MAX_THINGS )
 			{
 				unsigned index = world->num_things++;
 				
 				thing_index_remap[n] = index + 1;
 				things_to[index] = t;
-				
-				if ( is_player ) {
-					world->player = &things_to[index];
-				}
 			}
 		} else {
 			/* Thing has died. It will not be written to the new Thing list */
-			
-			if ( is_player ) {
-				world->player = NULL;
-			}
 			
 			if ( t.type < T_PROJECTILE )
 			{
@@ -762,6 +756,11 @@ static void update_things( World *world )
 			}
 		}
 	}
+	
+	if ( old_player && thing_index_remap[old_player - things_from] )
+		world->player = things_to + thing_index_remap[ old_player - things_from ] - 1;
+	else
+		world->player = NULL;
 	
 	for( n=0; n<world->num_things; n++ )
 	{

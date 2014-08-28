@@ -83,21 +83,23 @@ typedef struct PhysicsBlob {
 
 struct Thing {
 	ThingType type;
-	ThingID id; /* unique thing ID, never the same */
 	Real hp;
 	PhysicsBlob phys;
 	Real angle;
 	Thing *parent; /* If parent is non-NULL, then pos and old_pos are relative to parent */
-	ThingID parent_id; /* If parent_id != parent->id, then we know that parent has died */
 	Vec2 rel_pos; /* Relative position to parent */
 	U32 age; /* unsigned Real; seconds */
 	U32 underwater_time;
 	ThingData data;
+	/* Attribute bits. Default value should always be 0 */
 	unsigned dies_of_old_age : 1;
 	unsigned tilts_like_a_boat : 1;
 	unsigned can_not_die : 1;
 	U32 max_life_time; /* unsigned Real; seconds */
 };
+
+/* The object needs at least this much mass to be able to splash water */
+#define WATER_SPLASH_MIN_MASS 5
 
 /* How to fix the physics:
 - Thing needs to have mass
