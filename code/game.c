@@ -11,7 +11,6 @@
 World WORLD = {0};
 
 static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent );
-static void remove_thing( Thing *t );
 static Thing *add_aircraft( void );
 static Thing *add_gunship( void );
 static Thing *add_battleship( void );
@@ -33,6 +32,9 @@ Vec2 sin_cos_add_mul( float t, Vec2 v, float m )
 
 void init_world( void )
 {
+	WORLD.current_tick = 0;
+	WORLD.things = WORLD.things_buf[0];
+	
 	WORLD.enemy_spawn_timer = 0;
 	WORLD.num_things = 0;
 	WORLD.player = add_aircraft();
@@ -56,28 +58,6 @@ static void *list_append( void *list_base, unsigned *num_items, unsigned item_si
 	*num_items += 1;
 	mem_clear( p, 0, item_size );
 	return p;
-}
-
-static void list_remove( void *list_base, unsigned *num_items, unsigned item_size, void *item_p )
-{
-	char *c_list_base = list_base;
-	char *c_item_p = item_p;
-	
-	U32 a = (U32) ( c_item_p - c_list_base ) / item_size;
-	U32 b = *num_items - 1;
-	
-	if ( a != b )
-		mem_copy( c_list_base + item_size * a, c_list_base + item_size * b, item_size );
-	
-	*num_items = b;
-}
-
-static void remove_thing( Thing *t )
-{
-	if ( t == WORLD.player )
-		WORLD.player = NULL;
-	
-	list_remove( WORLD.things, &WORLD.num_things, sizeof(Thing), t );
 }
 
 static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
@@ -293,23 +273,23 @@ static int collide_projectile_1( Thing *proj, Thing *victim )
 	return 0;
 }
 
-static void collide_projectile( Thing *proj )
+static void collide_projectile( unsigned num_things, Thing *all_things, Thing *proj, Thing *player )
 {
 	if ( proj->data.pr.dmg == DAMAGES_PLAYER ) {
-		if ( WORLD.player )
-			collide_projectile_1( proj, WORLD.player );
+		if ( player )
+			collide_projectile_1( proj, player );
 	} else {
 		/* Note: The projectile is collision-tested against itself but collide_projectile_1() will reject because the victim is a projectile as well */
 		unsigned n;
-		for( n=0; n<MAX_THINGS; n++ ) {
-			Thing *victim = WORLD.things + n;
-			if ( victim != WORLD.player && collide_projectile_1( proj, victim ) )
+		for( n=0; n<num_things; n++ ) {
+			Thing *victim = all_things + n;
+			if ( victim != player && collide_projectile_1( proj, victim ) )
 				break;
 		}
 	}
 }
 
-static void shoot_projectile( Thing *t, float angle )
+static void shoot_projectile( Thing *t, float angle, DamageType damg )
 {
 	Thing *p;
 	
@@ -322,7 +302,7 @@ static void shoot_projectile( Thing *t, float angle )
 	if ( p )
 	{
 		p->phys.vel = sin_cos_add_mul( angle, t->phys.vel, PROJECTILE_VEL );
-		p->data.pr.dmg = ( t == WORLD.player ) ? DAMAGES_ENEMIES : DAMAGES_PLAYER;
+		p->data.pr.dmg = damg;
 		
 		p->phys.buoancy = REALF( PROJECTILE_BUOANCY );
 		p->phys.mass = PROJECTILE_MASS;
@@ -335,7 +315,7 @@ static void shoot_projectile( Thing *t, float angle )
 	}
 }
 
-static void update_aircraft( Thing *t )
+static void update_aircraft( Thing *t, int is_player )
 {
 	Aircraft *ac = &t->data.ac;
 	float fangle = REALTOF( t->angle );
@@ -374,7 +354,7 @@ static void update_aircraft( Thing *t )
 		
 		if ( t->data.ac.gun_trigger )
 		{
-			shoot_projectile( t, fangle );
+			shoot_projectile( t, fangle, is_player ? DAMAGES_ENEMIES : DAMAGES_PLAYER );
 			t->data.ac.gun_timer = REALF( AIRCRAFT_GUN_TIMER );
 		}
 	}
@@ -599,75 +579,83 @@ static Real measure_water_surface_angle( Real mid_x )
 	return REALF( a );
 }
 
-/* This function should handle everything that depends on time */
-void update_world( void )
+static void update_things( World *world )
 {
+	const unsigned tick_bit = world->current_tick & 1;
+	
+	Thing* const things_from = world->things_buf[tick_bit];
+	Thing* const things_to = world->things_buf[!tick_bit];
+	
+	Thing *old_player = world->player;
+	const unsigned num_old_things = world->num_things;
 	unsigned n;
 	
-	update_water( &WORLD.water );
-	for( n=0; n<WORLD.num_things; n++ )
+	world->things = things_to;
+	world->num_things = 0;
+	
+	for( n=0; n<num_old_things; n++ )
 	{
-		Thing *t = WORLD.things + n;
+		const int is_player = ( things_from + n ) == old_player;
+		Thing t = things_from[n];
 		Real water_h;
 		
 		/* Reset acceleration */
-		t->phys.accel.x = 0;
-		t->phys.accel.y = REALF( W_GRAVITY );
+		t.phys.accel.x = 0;
+		t.phys.accel.y = REALF( W_GRAVITY );
 		
-		t->age += REALF( W_TIMESTEP );
+		t.age += REALF( W_TIMESTEP );
 		
-		water_h = get_water_height( t->phys.pos.x );
+		water_h = get_water_height( t.phys.pos.x );
 		
-		if ( t->phys.pos.y > water_h )
+		if ( t.phys.pos.y > water_h )
 		{
 			Real water_friction = REALF( 0.94 );
 			
-			t->underwater_time += REALF( W_TIMESTEP );
-			t->phys.accel.y -= t->phys.buoancy;
+			t.underwater_time += REALF( W_TIMESTEP );
+			t.phys.accel.y -= t.phys.buoancy;
 			
-			t->phys.vel.x = REAL_MUL( t->phys.vel.x, water_friction );
-			t->phys.vel.y = REAL_MUL( t->phys.vel.y, water_friction );
+			t.phys.vel.x = REAL_MUL( t.phys.vel.x, water_friction );
+			t.phys.vel.y = REAL_MUL( t.phys.vel.y, water_friction );
 			
-			if ( t->type != T_PARTICLE ) {
-				if ( t->phys.pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
-					t->hp = 0;
+			if ( t.type != T_PARTICLE ) {
+				if ( t.phys.pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
+					t.hp = 0;
 			} else {
-				t->phys.pos.y = water_h;
+				t.phys.pos.y = water_h;
 			}
 		}
 		else
-		{	
-			t->underwater_time = 0;
+		{
+			t.underwater_time = 0;
 		}
 		
-		switch( t->type )
+		switch( t.type )
 		{
 			/* Animate motion here */
 			
 			case T_AIRCRAFT:
-				if ( t != WORLD.player )
-					do_enemy_aircraft_logic( t );
-				update_aircraft( t );
+				if ( !is_player ) do_enemy_aircraft_logic( &t );
+				update_aircraft( &t, is_player );
 				break;
 			
 			case T_GUNSHIP:
 			case T_BATTLESHIP:
-				t->angle = measure_water_surface_angle( t->phys.pos.x );
+				t.angle = measure_water_surface_angle( t.phys.pos.x );
 				break;
 			
 			case T_AAGUN:
-				if ( WORLD.player )
+				if ( world->player )
 				{
 					/* Aim the gun at player */
 					Real r = REALF( W_TIMESTEP * AAGUN_ROTATE_SPEED );
-					slow_rotate_thing( t, &WORLD.player->phys.pos, r );
+					slow_rotate_thing( &t, &world->player->phys.pos, r );
 					
 					/* Shoot all the time */
-					t->data.aa.gun_timer += REALF( W_TIMESTEP );
-					if ( t->data.aa.gun_timer > REALF(AAGUN_GUN_TIMER) )
+					t.data.aa.gun_timer += REALF( W_TIMESTEP );
+					if ( t.data.aa.gun_timer > REALF(AAGUN_GUN_TIMER) )
 					{
-						shoot_projectile( t, REALTOF(t->angle) );
-						t->data.aa.gun_timer = 0;
+						shoot_projectile( &t, REALTOF(t.angle), DAMAGES_PLAYER );
+						t.data.aa.gun_timer = 0;
 					}
 				}
 				break;
@@ -677,42 +665,42 @@ void update_world( void )
 				if ( t->underwater_time )
 					t->hp = 0;
 				*/
-				collide_projectile( t );
+				collide_projectile( num_old_things, things_from, &t, old_player );
 				break;
 			
 			case T_PARTICLE:
-				if ( t->age >= REALF( MAX_PARTICLE_TIME ) )
-					t->hp = 0; /* Die of old age */
+				if ( t.age >= REALF( MAX_PARTICLE_TIME ) )
+					t.hp = 0; /* Die of old age */
 				break;
 			
 			case T_DEBRIS:
-				if ( t->age > REALF( 7.0 ) )
-					t->hp = 0;
+				if ( t.age > REALF( 7.0 ) )
+					t.hp = 0;
 				if ( ( prng_next() & 0x3 ) == 0 )
 				{
-					if ( !t->underwater_time )
-						add_smoke( t->phys.pos );
+					if ( !t.underwater_time )
+						add_smoke( t.phys.pos );
 				}
 				
-				t->angle += REALF( 5 * W_TIMESTEP );
+				t.angle += REALF( 5 * W_TIMESTEP );
 				break;
 			
 			default:
 				break;
 		}
 		
-		if ( t->parent )
+		if ( t.parent )
 		{
-			if ( t->parent_id != t->parent->id )
+			if ( t.parent_id != t.parent->id )
 			{
 				/* Parent has died. Just die */
-				t->hp = 0;
+				t.hp = 0;
 			}
 			else
 			{
 				float m0, m1, m2, m3;
 				float rx, ry;
-				float a = REALTOF( t->parent->angle );
+				float a = REALTOF( t.parent->angle );
 				Vec2 rw_pos; /* relative position in world space */
 				
 				m0 = cosf( a );
@@ -720,53 +708,67 @@ void update_world( void )
 				m2 = -m1;
 				m3 = m0;
 				
-				rx = t->rel_pos.x;
-				ry = t->rel_pos.y;
+				rx = t.rel_pos.x;
+				ry = t.rel_pos.y;
 				
 				rw_pos.x = rx * m0 + ry * m2;
 				rw_pos.y = rx * m1 + ry * m3;
 				
 				/* Follow parent */
-				t->phys.pos = t->parent->phys.pos;
-				t->phys.pos.x += rw_pos.x;
-				t->phys.pos.y += rw_pos.y;
-				t->phys.vel = t->parent->phys.vel;
-				t->phys.accel = t->parent->phys.accel;
+				t.phys.pos = t.parent->phys.pos;
+				t.phys.pos.x += rw_pos.x;
+				t.phys.pos.y += rw_pos.y;
+				t.phys.vel = t.parent->phys.vel;
+				t.phys.accel = t.parent->phys.accel;
 			}
 		}
 		else
 		{
 			/* Apply physics to everything */
-			do_physics_step( &t->phys );
+			do_physics_step( &t.phys );
 			
-			if ( t->type != T_PARTICLE && t->phys.pos.y > water_h )
+			if ( t.type != T_PARTICLE && t.phys.pos.y > water_h )
 			{
 				const float thickness = 5000; /* larger value makes water move less */
 				const float falloff = 2; /* falloff distance so that objects deep underwater don't make the surface move */
-				Real f = REAL_MUL( REALF( falloff ) - MIN( t->phys.pos.y - water_h, REALF( falloff ) ), t->phys.mass * t->phys.vel.y ) / ( thickness * falloff );
-				displace_water( t->phys.pos.x, f );
+				Real f = REAL_MUL( REALF( falloff ) - MIN( t.phys.pos.y - water_h, REALF( falloff ) ), t.phys.mass * t.phys.vel.y ) / ( thickness * falloff );
+				displace_water( t.phys.pos.x, f );
 			}
 		}
 		
 		/* Wrap around world edges */
-		t->phys.pos.x = ( REALF( W_WIDTH ) + t->phys.pos.x ) % REALF( W_WIDTH );
+		t.phys.pos.x = ( REALF( W_WIDTH ) + t.phys.pos.x ) % REALF( W_WIDTH );
 		
 		/* Kill things that sink too deep */
-		if ( t->phys.pos.y > REALF( W_WATER_DEATH_LEVEL ) )
-			t->hp = 0;
+		if ( t.phys.pos.y > REALF( W_WATER_DEATH_LEVEL ) )
+			t.hp = 0;
 		
 		#if ENABLE_GODMODE
-		if ( WORLD.player )
-			WORLD.player->hp = REALF( 100 );
+		if ( world->player )
+			world->player->hp = REALF( 100 );
 		#endif
 		
-		/* Kill things with no HP remaining */
-		if ( t->hp <= 0 )
-		{
-			if ( t->type < T_PROJECTILE )
+		if ( t.hp > 0 ) {
+			if ( world->num_things < MAX_THINGS )
+			{
+				Thing *dst = things_to + world->num_things++;
+				*dst = t;
+				
+				if ( is_player ) {
+					world->player = dst;
+				}
+			}
+		} else {
+			/* Thing has died. It will not be written to the new Thing list */
+			
+			if ( is_player ) {
+				world->player = NULL;
+			}
+			
+			if ( t.type < T_PROJECTILE )
 			{
 				/* Throw pieces of debris */
-				add_explosion( t->phys.pos, t->phys.vel.x, t->phys.vel.y );
+				add_explosion( t.phys.pos, t.phys.vel.x, t.phys.vel.y );
 				
 				#if 0
 				if ( t->type == T_GUNSHIP || t->type == T_BATTLESHIP )
@@ -782,21 +784,20 @@ void update_world( void )
 				}
 				#endif
 			}
-			
-			remove_thing( t );
-			
-			if ( n > 0 )
-			{
-				/* remove_thing() has overwritten this Thing with some other Thing.
-				Must process the "same" Thing again. */
-				n--;
-			}
 		}
 	}
+}
+
+void update_world( void )
+{
+	update_water( &WORLD.water );
+	update_things( &WORLD );
 	
 	if ( --WORLD.enemy_spawn_timer <= 0 )
 	{
 		WORLD.enemy_spawn_timer = ( ENEMY_SPAWN_INTERVAL * GAME_TICKS_PER_SEC );
 		spawn_enemies();
 	}
+	
+	++WORLD.current_tick;
 }

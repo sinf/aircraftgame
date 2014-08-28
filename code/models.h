@@ -12,6 +12,7 @@ typedef enum {
 	M_AIRCRAFT_FLAME,
 	M_HELI_BODY,
 	M_HELI_ROTOR,
+	M_FIGHTER_JET,
 	NUM_MODELS
 } ModelID;
 

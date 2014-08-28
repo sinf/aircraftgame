@@ -9,7 +9,6 @@ STRUCT_PROTO( AAGun );
 STRUCT_PROTO( Particle );
 STRUCT_PROTO( Projectile );
 
-STRUCT_PROTO( ThingData );
 STRUCT_PROTO( Thing );
 STRUCT_PROTO( World );
 
@@ -63,19 +62,19 @@ typedef enum {
 	NUM_THING_TYPES
 } ThingType;
 
-struct ThingData {
+typedef union {
 	Aircraft ac;
 	AAGun aa;
 	Particle pt;
 	Projectile pr;
-};
+} ThingData;
 
 typedef struct PhysicsBlob {
 	Vec2 pos;
 	Vec2 vel;
 	Vec2 accel;
-	Real buoancy;
-	int mass; /* all masses should be in range 1 .. 255. Mass must not ever be 0! */
+	Real buoancy; /* vertical acceleration. positive is up */
+	int mass; /* all masses should be in range 1 .. 255. Mass must not ever be 0 because of divisions! */
 	/*
 	Real radius;
 	(a pointer to parent PhysicsBlob? handle attacked blobs in the physics code?)
@@ -124,11 +123,13 @@ typedef struct Water {
 #define MAX_THINGS 16536
 
 struct World {
+	unsigned current_tick; /* incremented by 1 every tick */
 	Thing *player;
 	int enemy_spawn_timer; /* (game ticks) */
 	unsigned num_things;
 	unsigned sorted_things[MAX_THINGS]; /* Thing indexes; Sorted by X coordinate for efficient collision testing */
-	Thing things[MAX_THINGS];
+	Thing *things; /* Things from the current frame */
+	Thing things_buf[2][MAX_THINGS]; /* Things from the previous and current frame. The lowest bit in current_tick can be used as an index to get the current things */
 	Water water;
 };
 
