@@ -5,7 +5,7 @@
 #define _GAME_INTERNALS
 #include "game.h"
 
-#define ENABLE_GODMODE 1
+#define ENABLE_GODMODE 0
 #define ENABLE_ENEMY_AIRCRAFT 1
 #define DISARM_ENEMIES 0
 
@@ -307,11 +307,6 @@ static void shoot_projectile( Thing *t, float angle, DamageType damg )
 {
 	Thing *p;
 	
-	#if DISARM_ENEMIES
-	if ( t != WORLD.player )
-		return;
-	#endif
-	
 	p = add_thing( T_PROJECTILE, t->phys.pos, NULL );
 	if ( p )
 	{
@@ -324,7 +319,7 @@ static void shoot_projectile( Thing *t, float angle, DamageType damg )
 		#if 0
 		/* Rock ships as they fire */
 		if ( t->type == T_AAGUN )
-			displace_water( t->phys.pos.x, REALF( 0.1 ) );
+			displace_water( t->phys.pos.x, REALF( 0.2 ) );
 		#endif
 	}
 }
@@ -447,7 +442,11 @@ static void do_enemy_aircraft_logic( Thing *self )
 	slow_rotate_thing( self, &target, REALF( AIRCRAFT_ROTATE_SPEED * W_TIMESTEP ) );
 	
 	self->data.ac.throttle_on = 1;
+	#if DISARM_ENEMIES
+	self->data.ac.gun_trigger = 0;
+	#else
 	self->data.ac.gun_trigger = ( WORLD.player != NULL ) && !( prng_next() & 0xFF );
+	#endif
 }
 
 #if !ENABLE_ENEMY_AIRCRAFT
@@ -672,6 +671,7 @@ static void update_things( World *world )
 					Real r = REALF( W_TIMESTEP * AAGUN_ROTATE_SPEED );
 					slow_rotate_thing( &t, &world->player->phys.pos, r );
 					
+					#if !DISARM_ENEMIES
 					/* Shoot all the time */
 					t.data.aa.gun_timer += REALF( W_TIMESTEP );
 					if ( t.data.aa.gun_timer > REALF(AAGUN_GUN_TIMER) )
@@ -679,6 +679,7 @@ static void update_things( World *world )
 						shoot_projectile( &t, REALTOF(t.angle), DAMAGES_PLAYER );
 						t.data.aa.gun_timer = 0;
 					}
+					#endif
 				}
 				break;
 			

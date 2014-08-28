@@ -70,6 +70,8 @@ void mat_translate( float tx, float ty, float tz )
 
 void mat_rotate( int axis, float angle )
 {
+	ASSERT( axis >= 0 );
+	ASSERT( axis < 3 );
 	angle = DEGREES( angle );
 	glRotatef( angle, axis == 0, axis == 1, axis == 2 );	
 }
