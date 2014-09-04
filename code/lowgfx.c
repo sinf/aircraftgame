@@ -101,48 +101,6 @@ static void mult_matrix( float c[16], const float a[16], const float b[16] )
 	}
 }
 
-#include <math.h>
-#include <stdio.h>
-#include <xmmintrin.h>
-
-static void dump_mat( float m[16] )
-{
-	int y;
-	for( y=0; y<4; y++ )
-		printf( "%.02f %.02f %.02f %.02f\n", m[y], m[4+y], m[8+y], m[12+y] );
-}
-
-void test_mmul( void )
-{
-	const float a[16] = {
-		0, 1, 2, 3,
-		4, 5, 6, 7,
-		8, 9, 10, 11,
-		12, 13, 14, 15
-	};
-	const float b[16] = {
-		-2, -3, -4, -5,
-		4, 3, 2, 1,
-		0, 7, 15, -6,
-		0.5, 2, 8, 1
-	};
-	float c[16];
-	
-	mult_matrix( c, a, b );
-	
-	printf( "mult_matrix:\n" );
-	dump_mat( c );
-	
-	glPushMatrix();
-	glLoadMatrixf( a );
-	glMultMatrixf( b );
-	glGetFloatv( GL_MODELVIEW_MATRIX, c );
-	glPopMatrix();
-	
-	printf( "glMultMatrixf:\n" );
-	dump_mat( c );
-}
-
 void mat_rotate( int axis, float angle )
 {
 	if ( USE_NEW_GL ) {
