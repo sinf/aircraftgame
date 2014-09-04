@@ -89,8 +89,22 @@ void unpack_models( void )
 		}
 		
 		ASSERT( n_verts <= MAX_MODEL_VERTS );
-		
 		vert_p += n_verts * dim;
+		
+		if ( MODEL_INFO[m].flags & F_MIRROR )
+		{
+			S32 *src = model_vertices_unpacked[m];
+			S32 *dst = model_vertices_unpacked[m] + n_verts * 3;
+			int v;
+			
+			ASSERT( 2*n_verts <= MAX_MODEL_VERTS );
+			
+			for( v=0; v<n_verts; v++ ) {
+				dst[3*v+0] = src[3*v+0];
+				dst[3*v+1] = src[3*v+1];
+				dst[3*v+2] = -src[3*v+2];
+			}
+		}
 		
 		model_indices_unpacked[m] = index_p;
 		index_p += MODEL_INFO[m].num_indices;
