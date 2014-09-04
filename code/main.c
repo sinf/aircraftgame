@@ -127,7 +127,7 @@ static int process_events( void )
 }
 #endif
 
-__attribute__((externally_visible)) void Main( void )
+static void Main0( void )
 {
 	U32 nap = 1000 / GAME_TICKS_PER_SEC;
 	U32 next_frame;
@@ -167,7 +167,21 @@ __attribute__((externally_visible)) void Main( void )
 		- not very useful unless using fullscreen */
 	
 	EXIT();
+}
+
+
+#ifdef MAIN
+int main( void )
+#else
+__attribute__((externally_visible)) void Main( void )
+#endif
+{
+	if ( sizeof(void*) == 8 ) {
+		/* Align stack to 16-byte boundary. Required on x86-64 */
+		__asm volatile ( "and $~0xF, %sp" );
+	}
 	
+	Main0();
 	#ifdef MAIN
 	return 0;
 	#endif

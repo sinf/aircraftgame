@@ -6,6 +6,9 @@
 
 #define BLOB_TEX_S 32
 
+/* use GL 3.1 rather than 1.1 */
+enum { USE_NEW_GL = 1 };
+
 static void generate_blob_texels( U32 texels[2][BLOB_TEX_S][BLOB_TEX_S] )
 {
 	int x, y;
@@ -63,17 +66,157 @@ void init_gfx( void )
 	generate_blob_texture();
 }
 
+/* Computes M*T where T is the translation matrix that contains tx,ty,tz */
+static void m_translate( float m[16], float tx, float ty, float tz )
+{
+	m[12] += m[0]*tx + m[4]*ty + m[8]*tz;
+	m[13] += m[1]*tx + m[5]*ty + m[9]*tz;
+	m[14] += m[2]*tx + m[6]*ty + m[10]*tz;
+	m[15] += m[3]*tx + m[7]*ty + m[11]*tz;
+}
+
 void mat_translate( float tx, float ty, float tz )
 {
-	glTranslatef( tx, ty, tz );
+	if ( USE_NEW_GL ) {
+		float m[16];
+		glGetFloatv( GL_MODELVIEW_MATRIX, m );
+		m_translate( m, tx, ty, tz );
+		glLoadMatrixf( m );
+		
+	} else {
+		glTranslatef( tx, ty, tz );
+	}
+}
+
+static void mult_matrix( float c[16], const float a[16], const float b[16] )
+{
+	int i, j, k;
+	for( j=0; j<4; j++ ) {
+		for( i=0; i<4; i++ ) {
+			float d = 0;
+			for( k=0; k<4; k++ )
+				d += a[j+4*k] * b[4*i+k];
+			c[4*j+i] = d;
+		}
+	}
+}
+
+#include <math.h>
+#include <stdio.h>
+#include <xmmintrin.h>
+
+static void dump_mat( float m[16] )
+{
+	int y;
+	for( y=0; y<4; y++ )
+		printf( "%.02f %.02f %.02f %.02f\n", m[y], m[4+y], m[8+y], m[12+y] );
+}
+
+void test_mmul( void )
+{
+	const float a[16] = {
+		0, 1, 2, 3,
+		4, 5, 6, 7,
+		8, 9, 10, 11,
+		12, 13, 14, 15
+	};
+	const float b[16] = {
+		-2, -3, -4, -5,
+		4, 3, 2, 1,
+		0, 7, 15, -6,
+		0.5, 2, 8, 1
+	};
+	float c[16];
+	
+	mult_matrix( c, a, b );
+	
+	printf( "mult_matrix:\n" );
+	dump_mat( c );
+	
+	glPushMatrix();
+	glLoadMatrixf( a );
+	glMultMatrixf( b );
+	glGetFloatv( GL_MODELVIEW_MATRIX, c );
+	glPopMatrix();
+	
+	printf( "glMultMatrixf:\n" );
+	dump_mat( c );
 }
 
 void mat_rotate( int axis, float angle )
 {
-	ASSERT( axis >= 0 );
-	ASSERT( axis < 3 );
-	angle = DEGREES( angle );
-	glRotatef( angle, axis == 0, axis == 1, axis == 2 );	
+	if ( USE_NEW_GL ) {
+		float s, c, in[16], out[16];
+		angle = -angle;
+		s = sin( angle );
+		c = cos( angle );
+		glGetFloatv( GL_MODELVIEW_MATRIX, in );
+		switch( axis )
+		{
+			case 0:
+				out[0] = in[0];
+				out[1] = in[1];
+				out[2] = in[2];
+				out[3] = in[3];
+				out[4] = (in[4]*c+in[8]*-s);
+				out[5] = (in[5]*c+in[9]*-s);
+				out[6] = (in[6]*c+in[10]*-s);
+				out[7] = (in[7]*c+in[11]*-s);
+				out[8] = (in[4]*s+in[8]*c);
+				out[9] = (in[5]*s+in[9]*c);
+				out[10] = (in[6]*s+in[10]*c);
+				out[11] = (in[7]*s+in[11]*c);
+				out[12] = in[12];
+				out[13] = in[13];
+				out[14] = in[14];
+				out[15] = in[15];
+				break;
+			case 1:
+				out[0] = (in[0]*c+in[8]*s);
+				out[1] = (in[1]*c+in[9]*s);
+				out[2] = (in[2]*c+in[10]*s);
+				out[3] = (in[3]*c+in[11]*s);
+				out[4] = in[4];
+				out[5] = in[5];
+				out[6] = in[6];
+				out[7] = in[7];
+				out[8] = (in[0]*-s+in[8]*c);
+				out[9] = (in[1]*-s+in[9]*c);
+				out[10] = (in[2]*-s+in[10]*c);
+				out[11] = (in[3]*-s+in[11]*c);
+				out[12] = in[12];
+				out[13] = in[13];
+				out[14] = in[14];
+				out[15] = in[15];
+				break;
+			case 2:
+				out[0] = (in[0]*c+in[4]*-s);
+				out[1] = (in[1]*c+in[5]*-s);
+				out[2] = (in[2]*c+in[6]*-s);
+				out[3] = (in[3]*c+in[7]*-s);
+				out[4] = (in[0]*s+in[4]*c);
+				out[5] = (in[1]*s+in[5]*c);
+				out[6] = (in[2]*s+in[6]*c);
+				out[7] = (in[3]*s+in[7]*c);
+				out[8] = in[8];
+				out[9] = in[9];
+				out[10] = in[10];
+				out[11] = in[11];
+				out[12] = in[12];
+				out[13] = in[13];
+				out[14] = in[14];
+				out[15] = in[15];
+				break;
+			default:
+				ASSERT( 0 );
+		}
+		glLoadMatrixf( out );
+	} else {
+		ASSERT( axis >= 0 );
+		ASSERT( axis < 3 );
+		angle = DEGREES( angle );
+		glRotatef( angle, axis == 0, axis == 1, axis == 2 );
+	}
 }
 
 void mat_scale( float x, float y, float z )
