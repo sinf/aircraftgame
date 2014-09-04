@@ -88,26 +88,13 @@ void mat_translate( float tx, float ty, float tz )
 	}
 }
 
-static void mult_matrix( float c[16], const float a[16], const float b[16] )
-{
-	int i, j, k;
-	for( j=0; j<4; j++ ) {
-		for( i=0; i<4; i++ ) {
-			float d = 0;
-			for( k=0; k<4; k++ )
-				d += a[j+4*k] * b[4*i+k];
-			c[4*j+i] = d;
-		}
-	}
-}
-
 void mat_rotate( int axis, float angle )
 {
 	if ( USE_NEW_GL ) {
 		float s, c, in[16], out[16];
 		angle = -angle;
-		s = sin( angle );
-		c = cos( angle );
+		s = sinf( angle );
+		c = cosf( angle );
 		glGetFloatv( GL_MODELVIEW_MATRIX, in );
 		switch( axis )
 		{
