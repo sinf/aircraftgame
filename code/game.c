@@ -9,6 +9,13 @@
 #define ENABLE_ENEMY_AIRCRAFT 1
 #define DISARM_ENEMIES 0
 
+/*
+For each thing type:
+- set of default attributes (mass, buoancy, attributes, health, 3d model, ...)
+- initializer function. Needed for variables that are initialized with randomness/math/child-things/...
+    - calls sub-initializers (one for each component)
+*/
+
 World WORLD = {0};
 
 static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent );
@@ -17,6 +24,8 @@ static Thing *add_gunship( void );
 static Thing *add_battleship( void );
 static void add_smoke( Vec2 pos );
 static void add_explosion( Vec2 pos, Real vel_x, Real vel_y );
+static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type );
+static void add_aagun( Thing *ship, Vec2 offset );
 
 static Real get_water_height( Real x );
 static void displace_water( Real x, Real delta );
@@ -60,6 +69,16 @@ void init_world( void )
 	WORLD.water.temp = WORLD.water.buffers[2];
 }
 
+static void add_hitpoints( Thing *t, int damage )
+{
+	t->hitpoints += damage;
+}
+static void add_smoke_at( Thing *t, int s )
+{
+	if ( !t->underwater_time )
+		add_particle( t->phys.pos, s, s, PT_SMOKE );
+}
+
 static void *list_append( void *list_base, unsigned *num_items, unsigned item_size )
 {
 	/* Warning: check for maximum item limit before calling this function! */
@@ -73,7 +92,7 @@ static void *list_append( void *list_base, unsigned *num_items, unsigned item_si
 static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 {
 	Thing *thing;
-	Real hp = REALF( MAX_THING_HP );
+	int hp = MAX_THING_HP;
 	
 	if ( WORLD.num_things >= MAX_THINGS )
 		return NULL;
@@ -84,7 +103,7 @@ static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 		hp <<= 1;
 	
 	thing->type = type;
-	thing->hp = hp;
+	thing->hitpoints = hp;
 	
 	thing->phys.pos = pos;
 	thing->phys.buoancy = REALF( 5.0f );
@@ -97,6 +116,14 @@ static Thing *add_thing( ThingType type, Vec2 pos, Thing *parent )
 	}
 	
 	return thing;
+}
+
+static void init_self_destruct( Timer *t, int ticks )
+{
+	t->ticks = 0;
+	t->max_ticks = ticks;
+	t->param = -1024;
+	t->func = add_hitpoints;
 }
 
 static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type )
@@ -121,10 +148,10 @@ static void add_particle( Vec2 pos, U8 rs_vel_x, U8 rs_vel_y, ParticleType type 
 		
 		t->phys.vel = vel;
 		t->data.pt.type = type;
-		
-		t->dies_of_old_age = 1;
 		t->phys.mass = 1;
-		t->max_life_time = REALF( MAX_PARTICLE_TIME );
+		t->hitpoints = 1;
+		
+		init_self_destruct( t->timers, GAME_TICKS_PER_SEC * MAX_PARTICLE_TIME );
 	}
 }
 
@@ -164,6 +191,12 @@ static void add_explosion( Vec2 pos, Real vel_x, Real vel_y )
 		{
 			t->phys.vel.x = vel_x - ( prng_next() & 0x7FF ) + 1024;
 			t->phys.vel.y = vel_y - ( prng_next() & 0xFFF );
+			
+			init_self_destruct( t->timers, 7 * GAME_TICKS_PER_SEC );
+			
+			t->timers[1].max_ticks = 3;
+			t->timers[1].param = 7;
+			t->timers[1].func = add_smoke_at;
 		}
 	}
 	
@@ -183,7 +216,7 @@ static Thing *add_aircraft( void )
 		t->phys.mass = 50;
 		t->phys.buoancy = REALF( AIRCRAFT_BUOANCY );
 		
-		t->explodes_on_death = 1;
+		t->attr.explodes_on_death = 1;
 		
 		/*t->data.ac.is_heli = 1;*/
 	}
@@ -202,14 +235,23 @@ static Thing *add_gunship( void )
 	{
 		gs->phys.vel.x = ship_vel; /* Set the ship in slow horizontal motion */
 		gs->phys.buoancy = REALF( 25.0f );
-		gs->tilts_like_a_boat = 1;
-		gs->explodes_on_death = 1;
+		gs->attr.tilts_like_a_boat = 1;
+		gs->attr.explodes_on_death = 1;
 		
 		/* gs->mass = 100; */
 		add_thing( T_AAGUN, gun_pos, gs );
 	}
 	
 	return gs;
+}
+
+static void add_aagun( Thing *ship, Vec2 offset )
+{
+	Thing *g = add_thing( T_AAGUN, offset, ship );
+	if ( g ) {
+		g->phys.mass = 1;
+		g->attr.explodes_on_death = 1;
+	}
 }
 
 static Thing *add_battleship( void )
@@ -223,24 +265,22 @@ static Thing *add_battleship( void )
 	Thing *bs = add_thing( T_BATTLESHIP, ship_pos, NULL );
 	if ( bs )
 	{
-		Thing *g1, *g2, *rd;
+		Thing *rd;
 		
 		bs->phys.vel.x = ship_vel;
 		bs->phys.buoancy = REALF( 25.0f );
-		bs->tilts_like_a_boat = 1;
-		bs->explodes_on_death = 1;
+		bs->attr.tilts_like_a_boat = 1;
+		bs->attr.explodes_on_death = 1;
 		/* bs->mass = 200; */
 		
-		g1 = add_thing( T_AAGUN, gun1_offset, bs );
-		g2 = add_thing( T_AAGUN, gun2_offset, bs );
-		rd = add_thing( T_RADAR, radar_offset, bs );
+		add_aagun( bs, gun1_offset );
+		add_aagun( bs, gun2_offset );
 		
-		g1->phys.mass = 1;
-		g1->explodes_on_death = 1;
-		g2->phys.mass = 1;
-		g2->explodes_on_death = 1;
-		rd->phys.mass = 1;
-		rd->explodes_on_death = 1;
+		rd = add_thing( T_RADAR, radar_offset, bs );
+		if ( rd ) {
+			rd->phys.mass = 1;
+			rd->attr.explodes_on_death = 1;
+		}
 	}
 	
 	return bs;
@@ -291,8 +331,8 @@ static int collide_projectile_1( Thing *proj, Thing *victim )
 	
 	if ( victim->type < T_PROJECTILE && test_collision( &proj->phys.pos, &victim->phys.pos, r ) )
 	{
-		proj->hp = 0;
-		victim->hp -= REALF( PROJECTILE_DAMAGE );
+		proj->hitpoints = 0;
+		add_hitpoints( victim, -PROJECTILE_DAMAGE );
 		add_smoke( proj->phys.pos );
 		return 1;
 	}
@@ -605,6 +645,16 @@ static Real measure_water_surface_angle( Real mid_x )
 	return REALF( a );
 }
 
+static void update_timer( Thing *thing, Timer *timer )
+{
+	if ( timer->ticks < timer->max_ticks )
+		timer->ticks += 1;
+	if ( timer->func && timer->ticks == timer->max_ticks ) {
+		timer->ticks = 0;
+		timer->func( thing, timer->param );
+	}
+}
+
 static void update_things( World *world )
 {
 	const unsigned tick_bit = world->current_tick & 1;
@@ -628,6 +678,7 @@ static void update_things( World *world )
 		const int is_player = ( things_from + n ) == old_player;
 		Thing t = things_from[n];
 		Real water_h;
+		int j;
 		
 		t.age += REALF( W_TIMESTEP );
 		
@@ -649,7 +700,7 @@ static void update_things( World *world )
 			
 			if ( t.type != T_PARTICLE ) {
 				if ( t.phys.pos.y > water_h + REALF( W_WATER_DEATH_LEVEL ) )
-					t.hp = 0;
+					t.hitpoints = 0;
 			} else {
 				t.phys.pos.y = water_h;
 			}
@@ -659,14 +710,8 @@ static void update_things( World *world )
 			t.underwater_time = 0;
 		}
 		
-		/* Self-destruct timer */
-		if ( t.dies_of_old_age ) {
-			if ( t.age >= t.max_life_time )
-				t.hp = 0;
-		}
-		
 		/* Fake physics for objects that float on water */
-		if ( t.tilts_like_a_boat ) {
+		if ( t.attr.tilts_like_a_boat ) {
 			t.angle = measure_water_surface_angle( t.phys.pos.x );
 		}
 		
@@ -678,7 +723,7 @@ static void update_things( World *world )
 				break;
 			
 			case T_AAGUN:
-				if ( world->player )
+				if ( old_player )
 				{
 					/* Aim the gun at player */
 					Real r = REALF( W_TIMESTEP * AAGUN_ROTATE_SPEED );
@@ -701,14 +746,7 @@ static void update_things( World *world )
 				break;
 			
 			case T_DEBRIS:
-				if ( t.age > REALF( 7.0 ) )
-					t.hp = 0;
-				if ( ( prng_next() & 0x3 ) == 0 )
-				{
-					if ( !t.underwater_time )
-						add_smoke( t.phys.pos );
-				}
-				t.angle += REALF( 5 * W_TIMESTEP );
+				t.angle += REALF( 5 * W_TIMESTEP ) >> ( t.underwater_time ? 2 : 0 );
 				break;
 			
 			default:
@@ -734,9 +772,12 @@ static void update_things( World *world )
 		
 		/* Kill things that sink too deep */
 		if ( t.phys.pos.y > REALF( W_WATER_DEATH_LEVEL ) )
-			t.hp = 0;
+			t.hitpoints = 0;
 		
-		if ( t.hp > 0 || t.can_not_die ) {
+		for( j=0; j<MAX_TIMERS; j++ )
+			update_timer( &t, t.timers+j );
+		
+		if ( t.hitpoints > 0 || t.attr.can_not_die ) {
 			/* Thing keeps on living. Write to the Thing list of the next frame */
 			
 			if ( world->num_things < MAX_THINGS )
@@ -749,7 +790,7 @@ static void update_things( World *world )
 		} else {
 			/* Thing has died. It will not be written to the new Thing list */
 			
-			if ( t.explodes_on_death ) {
+			if ( t.attr.explodes_on_death ) {
 				
 				/* Throw pieces of debris */
 				add_explosion( t.phys.pos, t.phys.vel.x, t.phys.vel.y );
@@ -787,7 +828,7 @@ static void update_things( World *world )
 			
 			if ( !parent_index ) {
 				/* Parent has died */
-				t->hp = 0;
+				t->hitpoints = 0;
 				t->parent = NULL;
 			} else {
 				float m0, m1, m2, m3;

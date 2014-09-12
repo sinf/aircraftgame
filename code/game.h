@@ -47,7 +47,7 @@ typedef enum {
 struct Particle {
 	ParticleType type;
 	/* All particles live exactly this many seconds */
-	#define MAX_PARTICLE_TIME 1.5f
+	#define MAX_PARTICLE_TIME 1.5
 };
 
 typedef enum {
@@ -81,22 +81,33 @@ typedef struct PhysicsBlob {
 	*/
 } PhysicsBlob;
 
+typedef struct ThingAttribs {
+	/* Default values should always be 0 */
+	unsigned tilts_like_a_boat : 1;
+	unsigned can_not_die : 1;
+	unsigned explodes_on_death : 1;
+} ThingAttribs;
+
+#define MAX_TIMERS 2
+typedef struct Timer {
+	unsigned ticks;
+	unsigned max_ticks; /* timer is activated when ticks == max_ticks */
+	int param;
+	void (*func)( Thing *t, int param );
+} Timer;
+
 struct Thing {
 	ThingType type;
-	Real hp;
+	int hitpoints;
 	PhysicsBlob phys;
 	Real angle;
 	Thing *parent; /* If parent is non-NULL, then pos and old_pos are relative to parent */
 	Vec2 rel_pos; /* Relative position to parent */
 	U32 age; /* unsigned Real; seconds */
 	U32 underwater_time;
+	ThingAttribs attr;
 	ThingData data;
-	/* Attribute bits. Default value should always be 0 */
-	unsigned dies_of_old_age : 1;
-	unsigned tilts_like_a_boat : 1;
-	unsigned can_not_die : 1;
-	unsigned explodes_on_death : 1;
-	U32 max_life_time; /* unsigned Real; seconds */
+	Timer timers[MAX_TIMERS];
 };
 
 /* The object needs at least this much mass to be able to splash water */
@@ -143,7 +154,6 @@ struct World {
 extern struct World WORLD;
 
 #define AIRCRAFT_BUOANCY 3.0
-
 #define GAME_TICKS_PER_SEC 60
 
 /* W_... = World constants: */

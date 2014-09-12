@@ -158,6 +158,12 @@ static GfxBlob get_particle_blob( Thing *thing )
 	blob.scale_x = w;
 	blob.scale_y = h;
 	
+	if ( type == PT_SMOKE ) {
+		blob.scale_y = blob.scale_x = \
+		REALF( 1.0 ) + REALF( 0.75 ) * thing->age / (unsigned)( MAX_PARTICLE_TIME * GAME_TICKS_PER_SEC );
+		blob.mode = BLOB_FUZZY;
+	}
+	
 	return blob;
 }
 
