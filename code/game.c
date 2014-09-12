@@ -183,6 +183,8 @@ static Thing *add_aircraft( void )
 		t->phys.mass = 50;
 		t->phys.buoancy = REALF( AIRCRAFT_BUOANCY );
 		
+		t->explodes_on_death = 1;
+		
 		/*t->data.ac.is_heli = 1;*/
 	}
 	
@@ -201,6 +203,7 @@ static Thing *add_gunship( void )
 		gs->phys.vel.x = ship_vel; /* Set the ship in slow horizontal motion */
 		gs->phys.buoancy = REALF( 25.0f );
 		gs->tilts_like_a_boat = 1;
+		gs->explodes_on_death = 1;
 		
 		/* gs->mass = 100; */
 		add_thing( T_AAGUN, gun_pos, gs );
@@ -220,14 +223,24 @@ static Thing *add_battleship( void )
 	Thing *bs = add_thing( T_BATTLESHIP, ship_pos, NULL );
 	if ( bs )
 	{
+		Thing *g1, *g2, *rd;
+		
 		bs->phys.vel.x = ship_vel;
 		bs->phys.buoancy = REALF( 25.0f );
 		bs->tilts_like_a_boat = 1;
+		bs->explodes_on_death = 1;
 		/* bs->mass = 200; */
 		
-		add_thing( T_AAGUN, gun1_offset, bs )->phys.mass = 1;
-		add_thing( T_AAGUN, gun2_offset, bs )->phys.mass = 1;
-		add_thing( T_RADAR, radar_offset, bs )->phys.mass = 1;
+		g1 = add_thing( T_AAGUN, gun1_offset, bs );
+		g2 = add_thing( T_AAGUN, gun2_offset, bs );
+		rd = add_thing( T_RADAR, radar_offset, bs );
+		
+		g1->phys.mass = 1;
+		g1->explodes_on_death = 1;
+		g2->phys.mass = 1;
+		g2->explodes_on_death = 1;
+		rd->phys.mass = 1;
+		rd->explodes_on_death = 1;
 	}
 	
 	return bs;
@@ -736,8 +749,8 @@ static void update_things( World *world )
 		} else {
 			/* Thing has died. It will not be written to the new Thing list */
 			
-			if ( t.type < T_PROJECTILE )
-			{
+			if ( t.explodes_on_death ) {
+				
 				/* Throw pieces of debris */
 				add_explosion( t.phys.pos, t.phys.vel.x, t.phys.vel.y );
 				

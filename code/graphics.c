@@ -69,7 +69,7 @@ static void generate_one_cloud( GfxBlob out[], unsigned num_blobs )
 	Vec2 p;
 	Real a;
 	
-	const unsigned g = 240; /* 220 + prng_next() % 32; */
+	const unsigned g = 220; /* 220 + prng_next() % 32; */
 	
 	p.x = prng_next() % REALF( W_WIDTH );
 	p.y = REALF( W_WATER_LEVEL - W_HEIGHT + 5 );

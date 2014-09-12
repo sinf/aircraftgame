@@ -95,6 +95,7 @@ struct Thing {
 	unsigned dies_of_old_age : 1;
 	unsigned tilts_like_a_boat : 1;
 	unsigned can_not_die : 1;
+	unsigned explodes_on_death : 1;
 	U32 max_life_time; /* unsigned Real; seconds */
 };
 
