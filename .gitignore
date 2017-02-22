@@ -1,0 +1,12 @@
+Makefile.old
+code/unused/
+debug_prog
+demo.sh
+graphics.old
+insp/
+*.blend1
+*.blend2
+prog
+temp_code/
+todo.txt
+screencap/
