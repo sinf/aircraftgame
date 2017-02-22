@@ -418,7 +418,7 @@ static void draw_background( void )
 		3 * w, REALF( W_HEIGHT + top_extra + W_WATER_DEPTH ), sky_color );
 }
 
-void render( void )
+void render1( void )
 {
 	static Real eye_x=0, eye_y=0;
 	/*static Real px = 0;*/

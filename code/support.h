@@ -20,7 +20,8 @@
 
 #define MAX(a,b) ( (a) > (b) ? (a) : (b) )
 #define MIN(a,b) ( (a) < (b) ? (a) : (b) )
-#define CLAMP(x,min,max) MIN(max,MAX((x),min))
+#define CLIP(x,min,max) MIN(max,MAX((x),min))
+#define CLAMP CLIP
 
 #ifdef DEBUG
 #define ASSERT(x) if (!(x)) { \

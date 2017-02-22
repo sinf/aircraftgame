@@ -22,7 +22,7 @@ static const S8 MODEL_VERTICES[] = {
 	/* fighter jet */ 56,-43,26,-59,-26,26,74,41,12,-54,20,26,126,-24,-1,126,-17,-1,26,-1,78,11,-1,78,21,15,-1,-31,-61,126,-53,-54,126,-54,20,5,-63,126,-1,-74,116,-1,-59,-26,-1
 };
 
-/* All quad indices. An arithmetic encoder might be able to compress this a little bit */
+/* All quad indices */
 static const U8 MODEL_INDICES[] = {
 	/* aircraft */ 6,4,5,7,2,3,9,8,12,13,11,10,10,11,14,15,18,16,3,2,0,1,17,19,3,16,4,9,9,4,17,1,1,0,8,9,
 	/* radar */ 1,0,2,3,9,6,8,7,13,10,12,11,9,7,14,12,3,5,4,1,

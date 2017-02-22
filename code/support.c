@@ -17,7 +17,7 @@ U32 MWC( void )
 }
 #endif
 
-U64 prng_state[2];
+U64 prng_state[2] = {0x7c1a2c2a7d8ff9f7, 0x2236e6667b6f36a5};
 
 U64 prng_next( void )
 {

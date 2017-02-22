@@ -5,7 +5,7 @@
 #define _GAME_INTERNALS
 #include "game.h"
 
-#define ENABLE_GODMODE 0
+#define ENABLE_GODMODE 1
 #define ENABLE_ENEMY_AIRCRAFT 1
 #define DISARM_ENEMIES 0
 
@@ -44,7 +44,7 @@ static Thing *add_player( void )
 {
 	Thing *t = add_aircraft();
 	#if ENABLE_GODMODE
-	t->can_not_die = 1;
+	t->attr.can_not_die = 1;
 	#endif
 	return t;
 }
