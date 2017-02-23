@@ -7,7 +7,7 @@
 
 #define ENABLE_GODMODE 1
 #define ENABLE_ENEMY_AIRCRAFT 1
-#define DISARM_ENEMIES 0
+#define DISARM_ENEMIES 1
 
 /*
 For each thing type:
@@ -605,24 +605,25 @@ static void update_water( Water w[1] )
 
 static Real get_water_height( Real x )
 {
-	
 	Water *w = &WORLD.water;
 	Real h0, h1, t;
-	int cell;
-	
-	cell = REALTOI( x );
-	cell = ( cell + WATER_RESOL ) % WATER_RESOL;
+
+	int u_prec = REAL_FRACT_BITS;
+	U32 u = ( x + REALF( W_WIDTH ) << u_prec ) / REALF( WATER_ELEM_SPACING );
+	U32 cell = ( u >> u_prec ) % WATER_RESOL;
+
 	h0 = w->z[cell];
-	h1 = w->z[(cell + 1) % WATER_RESOL];
+	h1 = w->z[(cell + 1u) % WATER_RESOL];
 	
-	t = REAL_FRACT_PART( x );
+	t = REAL_FRACT_PART( u );
 	return REALF( W_WATER_LEVEL ) + h0 + REAL_MUL( t, h1 - h0 );
 }
 
 static void displace_water( Real x, Real delta )
 {
 	Water *w = &WORLD.water;
-	w->z[ ( REALTOI( x ) + WATER_RESOL ) % WATER_RESOL ] += delta;
+	U32 i = WATER_RESOL + WATER_CELL_AT_X( x );
+	w->z[i % WATER_RESOL] += delta;
 }
 
 static Real get_avg_water_height( Real x0, Real x1, unsigned samples )

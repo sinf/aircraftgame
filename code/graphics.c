@@ -118,7 +118,6 @@ static void generate_clouds( void )
 void setup2D( void )
 {
 	unpack_models();
-	init_gfx();
 	generate_clouds();
 }
 
@@ -203,27 +202,6 @@ static void draw_water( void )
 	}
 	
 	draw_triangle_strip( num_verts, verts );
-}
-
-#define MAX_MODEL_INST 512
-static float model_inst_matr[NUM_MODELS][MAX_MODEL_INST][16] = {{{0}}};
-static unsigned model_inst_count[NUM_MODELS] = {0};
-
-static void push_model_mat( ModelID m )
-{
-	if ( model_inst_count[m] < MAX_MODEL_INST ) {
-		unsigned i = model_inst_count[m]++;
-		mat_store( model_inst_matr[m][i] );
-	}
-}
-
-static void flush_models( void )
-{
-	int n;
-	for( n=0; n<NUM_MODELS; n++ ) {
-		draw_models( model_inst_count[n], n, &model_inst_matr[n][0][0] );
-		model_inst_count[n] = 0;
-	}
 }
 
 static void render_world_fg( void )
@@ -407,43 +385,3 @@ static void draw_wrapped( Real eye_x, void (*draw_stuff)(void) )
 	}
 }
 
-static void draw_background( void )
-{
-	const U32 sky_color = RGB_32( 0xd8, 0xd8, 0xac );
-	const float top_extra = 120;
-	Real w = REALF( W_WIDTH );
-	
-	draw_box(
-		-w, REALF( W_WATER_LEVEL - W_HEIGHT - top_extra ),
-		3 * w, REALF( W_HEIGHT + top_extra + W_WATER_DEPTH ), sky_color );
-}
-
-void render1( void )
-{
-	static Real eye_x=0, eye_y=0;
-	/*static Real px = 0;*/
-	
-	#if DEBUG
-	extern void glClear( int );
-	glClear( 0x4000 );
-	#endif
-	
-	if ( WORLD.player )
-	{
-		eye_x = WORLD.player->phys.pos.x;
-		eye_y = WORLD.player->phys.pos.y;
-	}
-	
-	mat_push();
-	mat_translate( -eye_x, -eye_y, 0 );
-	
-	draw_background();
-	draw_wrapped( eye_x, render_world_fg );
-	draw_wrapped( eye_x, draw_water );
-	
-	draw_box(
-		REALF( -W_WIDTH ), REALF( W_WATER_LEVEL + W_WATER_DEPTH ),
-		REALF( 3 * W_WIDTH ), REALF( 100 ), RGB_32( 0, 0, 0 ) );
-	
-	mat_pop();
-}

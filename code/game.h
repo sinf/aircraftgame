@@ -184,6 +184,8 @@ extern struct World WORLD;
 #define MAX_UNDERWATER_VEL 0.4f
 #define MAX_THING_HP 80
 
+#define MAX_THING_BOUND_R 10
+
 #define AAGUN_GUN_TIMER 1.0
 #define AAGUN_ROTATE_SPEED 1.0
 
