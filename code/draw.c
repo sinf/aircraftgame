@@ -24,6 +24,15 @@ static Color lerp( Color a, Color b, float t )
 	return c;
 }
 
+static Color unpack( U32 x )
+{
+	Color c;
+	c.r = x >> 16 & 0xff;
+	c.g = x >> 8 & 0xff;
+	c.b = x & 0xff;
+	return c;
+}
+
 static U32 pack( Color c )
 {
 	float t=255;
@@ -125,7 +134,7 @@ void draw_water( void )
 			U32 i = u >> u_prec;
 			U32 j = i%m;
 			Real *z = WORLD.water.z;
-			#if 1
+			#if 0
 			// triangle shaped waves
 			DReal f = REAL_FRACT_PART( u >> u_prec - REAL_FRACT_BITS );
 			Real l = z[j];
@@ -149,6 +158,35 @@ static int object_is_visible( Real x ) {
 	< REALF( HORZ_VIEW_RANGE/2+MAX_THING_BOUND_R );
 }
 
+static void draw_circle( float cx, float cy, float r, U32 color )
+{
+	int x0, y0, x1, y1, x, y;
+	float rr = r*r;
+
+	r = MAX( r, 0.525f );
+	x0 = cx - r;
+	y0 = cy - r;
+	x1 = cx + r + 1.0f;
+	y1 = cy + r + 1.0f;
+	x0 = MAX( x0, 0 );
+	y0 = MAX( y0, 0 );
+	x1 = MIN( x1, r_resx );
+	y1 = MIN( y1, r_resy );
+
+	for( y=y0; y<y1; ++y ) {
+		for( x=x0; x<x1; ++x ) {
+			U32 *dst = r_canvas + y*r_pitch/4 + x;
+
+			float dx = x + 0.5f - cx;
+			float dy = y + 0.5f - cy;
+			float d = dx*dx + dy*dy;
+
+			if ( d < rr )
+				*dst = color;
+		}
+	}
+}
+
 void draw_blob( const GfxBlob blob[1] )
 {
 	Real rx = get_rel_x( blob->x, eye_x );
@@ -159,7 +197,7 @@ void draw_blob( const GfxBlob blob[1] )
 	y = r_resy/2 + REALTOF( ry ) * view_scale;
 
 	if ( x < r_resx && y < r_resy ) {
-		r_canvas[y*r_pitch/4 + x] = ~0;
+		draw_circle( x, y, REALTOF( blob->scale_x ) * view_scale, blob->color );
 	}
 }
 
@@ -175,7 +213,7 @@ static GfxBlob get_particle_blob( Thing *thing )
 {
 	static const Real PARTICLE_SIZE[] = {
 		REALF(0.5), REALF(0.5), /* water1 */
-		REALF(2), REALF(1), /* water2*/
+		REALF(1.4), REALF(0.75), /* water2*/
 		REALF(1), REALF(1), /* smoke (size should be random) */
 	};
 	
@@ -339,6 +377,16 @@ static void render_world_fg( void )
 				}
 			}
 			mat_pop();
+		}
+		else
+		{
+		}
+
+		if ( mdl != BAD_MODEL_ID ) {
+			// make all entities visible as a dot
+			float xx = r_resx * 0.5f + REALTOF( get_rel_x( x, eye_x ) ) * view_scale;
+			float yy = r_resy * 0.5f + REALTOF( y - eye_y ) * view_scale;
+			draw_circle( xx, yy, 2.5f, 0xFFFFFF );
 		}
 	}
 	

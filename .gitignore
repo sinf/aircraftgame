@@ -8,7 +8,6 @@ insp/
 *.blend2
 prog
 temp_code/
-todo.txt
 screencap/
 code/Session.vim
 oldbin
