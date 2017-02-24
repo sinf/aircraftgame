@@ -160,81 +160,101 @@ static int object_is_visible( Real x ) {
 	< REALF( HORZ_VIEW_RANGE/2+MAX_THING_BOUND_R );
 }
 
-void draw_circle( float cx, float cy, float r, U32 color )
-{
-	int x0, y0, x1, y1, x, y;
 
-	x0 = cx - r;
+#define CIRCLE_FB 2
+
+// x,y,r: 4 bits of subpixel precision
+void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
+{
+	#define p CIRCLE_FB
+	int x0, y0, x1, y1, x, y;
+	// x0,y0,x1,y1: integer bounding box of pixels to be processed
+
+	x0 = cx - r >> p;
 	x0 = MAX( x0, 0 );
 	x0 &= ~3; // align to 16 byte boundary (aka 4 pixels)
-	x1 = cx + r + 1.0f;
-	x1 = x0 + ( x1 - x0 + 3 & ~3 ); // pad width to multiple of 4
+
+	// !! if (cx==r_resx-1) ,then x0 will be r_resx-4, and since each inner loop writes 8 pixels, the last 4 pixels will overflow to the next scanline:
+	// scanlines need to be padded a little wider
+
+	x1 = cx + r + (1<<p) >> p;
+	x1 = x0 + ( x1 - x0 + 7 & ~7 ); // pad width to multiple of 8
 	x1 = MIN( x1, r_resx );
 
-	y0 = cy - r;
+	y0 = cy - r >> p;
 	y0 = MAX( y0, 0 );
-	y1 = cy + r + 1.0f;
+	y1 = cy + r + (1<<p) >> p;
 	y1 = MIN( y1, r_resy );
 
 	int skip = r_pitch >> 2;
 	U32 *dst = r_canvas + y0 * skip;
 
-	float dx0s = x0 + 0.5f - cx;
-	float dy0s = y0 + 0.5f - cy;
+	S32 half = 1<<p-1;
+	S32 dx0s = ( x0 << p ) + half - cx;
+	S32 dy0s = ( y0 << p ) + half - cy;
 
-	static const float data[] = {1,1,1,1,4,4,4,4,8,8,8,8,16,16,16,16,0,1,2,3};
-	__m128 a0, b, dx0, dy, one, c4, c8, c16, rr;
-	rr = _mm_set1_ps( r*r );
-	one = _mm_load_ps( data );
-	c4 = _mm_load_ps( data+4 );
-	c8 = _mm_load_ps( data+8 );
-	c16 = _mm_load_ps( data+12 );
+	static const S16 off[] = {0<<p,1<<p,2<<p,3<<p,4<<p,5<<p,6<<p,7<<p};
+	__m128i a0, b, dx0, dy, rr;
+	rr = _mm_set1_epi16( r*r + half ); //2*p fract bits
+
+	__m128i one = _mm_srli_epi16( _mm_cmpeq_epi16( one, one ), 15 );
+	__m128i
+	dy_inc = _mm_slli_epi16( one, p ), //1<<p
+	b_inc = _mm_slli_epi16( one, 2*p ), //1<<2p
+	dx_inc = _mm_slli_epi16( one, 3+p ), //8<<p
+	f_inc = _mm_slli_epi16( one, 6+2*p ); //64<<2p
 
 	// (dx0,dy): distance to centre
-	dx0 = _mm_add_ps( _mm_set1_ps( dx0s ), _mm_load_ps( data+16 ) );
-	dy = _mm_set1_ps( dy0s );
-	
-	// (a0,b): squared distance to centre
-	a0 = _mm_mul_ps( dx0, dx0 );
-	b = _mm_mul_ps( dy, dy );
+	dx0 = _mm_add_epi16( _mm_set1_epi16( dx0s ), _mm_load_si128( (void*) off ) );
+	dy = _mm_set1_epi16( dy0s );
+
+	// (a0,b): squared distance to centre (2*p fractional bits)
+	a0 = _mm_mullo_epi16( dx0, dx0 );
+	b = _mm_mullo_epi16( dy, dy );
 
 	for( y=y0; y<y1; ++y ) {
 
-		__m128 f = _mm_add_ps( a0, b );
-		__m128 dx = dx0;
+		__m128i
+		f = _mm_add_epi16( a0, b ),
+		dx = dx0;
 
-		for( x=x0; x<x1; x+=4 ) {
+		for( x=x0; x<x1; x+=8 ) {
 
-			int m = _mm_movemask_ps( _mm_cmplt_ps( f, rr ) );
-			if ( m & 1 ) dst[x] = color;
-			if ( m & 2 ) dst[x+1] = color;
-			if ( m & 4 ) dst[x+2] = color;
-			if ( m & 8 ) dst[x+3] = color;
+			int m = _mm_movemask_epi8( _mm_cmplt_epi16( f, rr ) );
 
-			f = _mm_add_ps( f, c16 );
-			f = _mm_add_ps( f, _mm_mul_ps( dx, c8 ) );
-			dx = _mm_add_ps( dx, c4 );
+			for( int i=0; i<8; ++i ) {
+				if ( m & 1 )
+					dst[x+i] = color;
+				m >>= 2;
+			}
+
+			f = _mm_add_epi16( f, f_inc );
+			f = _mm_add_epi16( f, _mm_slli_epi16( dx, p + 4 ) );
+			dx = _mm_add_epi16( dx, dx_inc );
 		}
 
-		b = _mm_add_ps( b, one );
-		b = _mm_add_ps( b, _mm_add_ps( dy, dy ) );
-		dy = _mm_add_ps( dy, one );
+		b = _mm_add_epi16( b, b_inc );
+		b = _mm_add_epi16( b, _mm_slli_epi16( _mm_add_epi16( dy, dy ), p ) );
+		dy = _mm_add_epi16( dy, dy_inc );
 		dst += skip;
 	}
+	#undef p
 }
 
 void draw_blob( const GfxBlob blob[1] )
 {
 	Real rx = get_rel_x( blob->x, eye_x );
 	Real ry = blob->y - eye_y;
+	Real z = REALF( view_scale );
 
-	unsigned
-	x = r_resx/2 + REALTOF( rx ) * view_scale,
-	y = r_resy/2 + REALTOF( ry ) * view_scale;
+	int p = CIRCLE_FB;
+	int s = REAL_FRACT_BITS - p;
 
-	if ( x < r_resx && y < r_resy ) {
-		draw_circle( x, y, REALTOF( blob->scale_x ) * view_scale, blob->color );
-	}
+	S32
+	x = ( r_resx/2 << p ) + ( DREAL_MUL( rx, z ) >> s ),
+	y = ( r_resy/2 << p ) + ( DREAL_MUL( ry, z ) >> s );
+
+	draw_circle( x, y, DREAL_MUL( blob->scale_x, z ) >> s, blob->color );
 }
 
 void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] )
@@ -422,7 +442,8 @@ static void render_world_fg( void )
 			// make all entities visible as a dot
 			float xx = r_resx * 0.5f + REALTOF( get_rel_x( x, eye_x ) ) * view_scale;
 			float yy = r_resy * 0.5f + REALTOF( y - eye_y ) * view_scale;
-			draw_circle( xx, yy, 2.5f, 0xFFFFFF );
+			float p = 1 << CIRCLE_FB;
+			draw_circle( xx*p, yy*p, p*2.5f, 0xFFFFFF );
 		}
 	}
 	
@@ -466,9 +487,11 @@ void render( void )
 
 	if ( 1 ) {
 		static float a = 0;
-		int x = 50.5f + cosf( a ) * 40;
-		int y = 50.5f + sinf( a) * 20;
-		draw_circle( x, y, 20, 0xFF );
+		float
+		x = 50.5f + cosf( a ) * 40,
+		y = 50.5f + sinf( a) * 20;
+		int p = CIRCLE_FB;
+		draw_circle( x*(1<<p), y*(1<<p), 20<<p, 0xFF );
 		a += PI/300.0f;
 	}
 }
