@@ -109,6 +109,7 @@ static void Main0( void )
 	init_world();
 	
 	next_frame = get_time_ms();
+
 	for( ;; )
 	{
 		if ( get_time_ms() > next_frame )

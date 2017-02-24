@@ -165,25 +165,48 @@ static void draw_circle( float cx, float cy, float r, U32 color )
 
 	r = MAX( r, 0.525f );
 	x0 = cx - r;
+	x0 &= ~3; // align to 16 byte boundary (aka 4 pixels)
 	y0 = cy - r;
 	x1 = cx + r + 1.0f;
+	x1 = x0 + ( x1 - x0 + 3 & ~3 ); // pad width to multiple of 4
 	y1 = cy + r + 1.0f;
+
 	x0 = MAX( x0, 0 );
 	y0 = MAX( y0, 0 );
 	x1 = MIN( x1, r_resx );
 	y1 = MIN( y1, r_resy );
 
+	int skip = r_pitch / 4;
+	U32 *dst = r_canvas + y0 * skip;
+
+	float dx0 = x0 + 0.5f - cx;
+	float dy = y0 + 0.5f - cy;
+	float a0 = dx0*dx0;
+	float b = dy*dy;
+	/*
+	__m128 a = _mm_set_ps( dx+3, dx+2, dx+1, dx );
+	__m128 b = _mm_set1_ps( dy );
+	a = _mm_mul_ps( a, a );
+	b = _mm_mul_ps( b, b );
+	*/
+
 	for( y=y0; y<y1; ++y ) {
+
+		float f = a0 + b;
+		float dx = dx0;
+
 		for( x=x0; x<x1; ++x ) {
-			U32 *dst = r_canvas + y*r_pitch/4 + x;
 
-			float dx = x + 0.5f - cx;
-			float dy = y + 0.5f - cy;
-			float d = dx*dx + dy*dy;
+			if ( f < rr )
+				dst[x] = color;
 
-			if ( d < rr )
-				*dst = color;
+			f += 2*dx + 1;
+			dx += 1;
 		}
+
+		b += 2*dy + 1;
+		dy += 1;
+		dst += skip;
 	}
 }
 
@@ -427,5 +450,13 @@ void render( void )
 	render_world_fg();
 
 	mat_pop();
+
+	if ( 1 ) {
+		static float a = 0;
+		int x = 50.5f + cosf( a ) * 40;
+		int y = 50.5f + sinf( a) * 20;
+		draw_circle( x, y, 20, 0xFF );
+		a += PI/300.0f;
+	}
 }
 

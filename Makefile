@@ -1,5 +1,5 @@
 
-OPTIONS=-Wall -Wno-parentheses -DUSE_SDL `sdl2-config --cflags` -nostartfiles -Wl,-e,Main
+OPTIONS=-std=c99 -Wall -Wno-parentheses -DUSE_SDL `sdl2-config --cflags` -nostartfiles -Wl,-e,Main
 LIBS=-lX11 `sdl2-config --libs` -lm -lGL
 #LIBS=-lGL `sdl2-config --libs` -lm -ldl
 TARGET=prog

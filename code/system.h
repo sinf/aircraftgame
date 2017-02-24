@@ -1,6 +1,8 @@
 #ifndef _SYSTEM_H
 #define _SYSTEM_H
 
+#include <alloca.h>
+
 #define asm __asm__ volatile
 
 /* #define inline __attribute__((always_inline)) __attribute__((unused)) */
