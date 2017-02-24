@@ -164,7 +164,6 @@ static int object_is_visible( Real x ) {
 // fractional bits in circle coordinates
 #define CIRCLE_FB 2
 
-// x,y,r: 4 bits of subpixel precision
 void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
 {
 	#define p CIRCLE_FB
@@ -202,7 +201,8 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
 	__m128i a0, b, dx0, dy, rr;
 	rr = _mm_set1_epi16( r*r + half >> p );
 
-	__m128i one = _mm_srli_epi16( _mm_cmpeq_epi16( one, one ), 15 );
+	__m128i allset = _mm_cmpeq_epi16( allset, allset );
+	__m128i one = _mm_srli_epi16( allset, 15 );
 	__m128i
 	dy_inc = _mm_slli_epi16( one, p ), //1<<p
 	dx_inc = _mm_slli_epi16( one, 3+p ); //8<<p
@@ -218,6 +218,11 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
 	a0 = _mm_srli_epi16( _mm_mullo_epi16( dx0, dx0 ), p );
 	b = _mm_srli_epi16( _mm_mullo_epi16( dy, dy ), p );
 
+	__m128i alpha = _mm_set1_epi16( 100 );
+	__m128i colx;
+	colx = _mm_set_epi64x( 0, (U64) color | (U64) color << 32 );
+	colx = _mm_unpacklo_epi8( colx, _mm_setzero_si128() );
+
 	for( y=y0; y<y1; ++y ) {
 
 		__m128i
@@ -226,12 +231,30 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
 
 		for( x=x0; x<x1; x+=8 ) {
 
-			int m = _mm_movemask_epi8( _mm_cmplt_epi16( f, rr ) );
+			__m128i m = _mm_cmplt_epi16( f, rr );
+			__m128i z = _mm_setzero_si128();
 
-			for( int i=0; i<8; ++i ) {
-				if ( m & 1 )
-					dst[x+i] = color;
-				m >>= 2;
+			for( int j=0; j<2; ++j ) {
+				__m128i c0, c1, c2, c3, c4, c5, c6, c7, M;
+				void *mem = dst + x + 4*j;
+
+				// unpacklo_epi16 -> R_G_B_._R_G_B_.
+				c0 = _mm_load_si128( mem ); // RGB.RGB.rgb.rgb.
+				c1 = _mm_unpacklo_epi8( c0, z ); // first two pixels as 16bit
+				c2 = _mm_add_epi16( _mm_mullo_epi16( _mm_sub_epi16( colx, c1 ), alpha ),
+					_mm_slli_epi16( c1, 8 ) );
+
+				c3 = _mm_unpackhi_epi8( c0, z ); // last two pixels as 16bit
+				c4 = _mm_add_epi16( _mm_mullo_epi16( _mm_sub_epi16( colx, c3 ), alpha ),
+					_mm_slli_epi16( c3, 8 ) );
+
+				c6 = _mm_packus_epi16( _mm_srli_epi16( c2, 8 ), _mm_srli_epi16( c4, 8 ) );
+
+				M = _mm_unpacklo_epi16( m, m );
+				c7 = _mm_or_si128( _mm_and_si128( M, c6 ), _mm_andnot_si128( M, c0 ) );
+
+				_mm_store_si128( mem, c7 );
+				m = _mm_srli_si128( m, 8 );
 			}
 
 			f = _mm_add_epi16( f, f_inc );
@@ -491,7 +514,7 @@ void render( void )
 
 	mat_pop();
 
-	if ( 1 ) {
+	if ( 0 ) {
 		static float a = 0;
 		float
 		x = 50.5f + cosf( a ) * 40,
