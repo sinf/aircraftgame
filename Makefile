@@ -9,7 +9,7 @@ SOURCES=$(shell echo code/*.c)
 DEPS=$(SOURCES) $(shell echo code/*.h)
 
 SMALL_OPTIONS=$(OPTIONS) -O2 -Wl,-O2 -ffast-math -mfpmath=both -fno-stack-protector
-DEBUG_OPTIONS=$(OPTIONS) -O0 -g -DDEBUG
+DEBUG_OPTIONS=$(OPTIONS) -O2 -g -DDEBUG
 #-flto -fwhole-program 
 
 # Options for 32-bit build:
@@ -22,11 +22,11 @@ all: $(DEBUG_TARGET)
 clean:
 	rm -f $(TARGET) $(DEBUG_TARGET) $(PACKED_TARGET)
 
-$(TARGET): $(DEPS)
+$(TARGET): $(DEPS) Makefile
 	gcc $(SMALL_OPTIONS) $(SOURCES) $(LIBS) -o $@
 	strip $@ -s -R .comment -R .jcr -R .eh_frame_hdr -R .note.ABI-tag -R .gnu.version -R .note.gnu.build-id
 
-$(DEBUG_TARGET): $(DEPS)
+$(DEBUG_TARGET): $(DEPS) Makefile
 	gcc $(DEBUG_OPTIONS) $(SOURCES) $(LIBS) -o $@
 
 # \044 is the escape code for $
