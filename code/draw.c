@@ -164,7 +164,7 @@ static int object_is_visible( Real x ) {
 // fractional bits in circle coordinates
 #define CIRCLE_FB 2
 
-void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
+void draw_circle( S32 cx, S32 cy, S32 r, U32 color, int sharp )
 {
 	#define p CIRCLE_FB
 	int x0, y0, x1, y1, x, y;
@@ -237,10 +237,14 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
 			int mi = _mm_movemask_epi8( m );
 
 			__m128i alpha;
-			alpha = _mm_mullo_epi16( inv_rr, _mm_sub_epi16( rr, f ) );
-			alpha = _mm_srli_epi16( alpha, 6 );
-			alpha = _mm_max_epi16( alpha, zero );
-			alpha = _mm_srli_epi16( alpha, p );
+			if ( !sharp ) {
+				alpha = _mm_mullo_epi16( inv_rr, _mm_sub_epi16( rr, f ) );
+				alpha = _mm_srli_epi16( alpha, 6 );
+				alpha = _mm_max_epi16( alpha, zero );
+				alpha = _mm_srli_epi16( alpha, p );
+			} else {
+				alpha = _mm_set1_epi16( 255 );
+			}
 
 			if ( mi ) for( int j=0; j<2; ++j )
 			{
@@ -297,7 +301,8 @@ void draw_blob( const GfxBlob blob[1] )
 	x = ( r_resx/2 << p ) + ( DREAL_MUL( rx, z ) >> s ),
 	y = ( r_resy/2 << p ) + ( DREAL_MUL( ry, z ) >> s );
 
-	draw_circle( x, y, DREAL_MUL( blob->scale_x, z ) >> s, blob->color );
+	draw_circle( x, y, DREAL_MUL( blob->scale_x, z ) >> s,
+	blob->color, blob->mode == BLOB_SHARP );
 }
 
 void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] )
@@ -337,7 +342,7 @@ static GfxBlob get_particle_blob( Thing *thing )
 	w = PARTICLE_SIZE[type << 1];
 	h = PARTICLE_SIZE[(type << 1) + 1];
 	
-	blob.mode = BLOB_SHARP;
+	blob.mode = BLOB_FUZZY;
 	blob.color = RGBA_32( g, g, g, a );
 	blob.x = thing->phys.pos.x;
 	blob.y = thing->phys.pos.y;
@@ -486,7 +491,7 @@ static void render_world_fg( void )
 			float xx = r_resx * 0.5f + REALTOF( get_rel_x( x, eye_x ) ) * view_scale;
 			float yy = r_resy * 0.5f + REALTOF( y - eye_y ) * view_scale;
 			float p = 1 << CIRCLE_FB;
-			draw_circle( xx*p, yy*p, p*2.5f, 0xFFFFFF );
+			draw_circle( xx*p, yy*p, p*2.5f, 0xFFFFFF, 1 );
 		}
 	}
 	
@@ -535,7 +540,9 @@ void render( void )
 		y = 50.5f + sinf( a ) * 20,
 		r = 20.0f + cosf( 0.3f * a ) * 15.0f,
 		p = 1<<CIRCLE_FB;
-		draw_circle( x*p, y*p, r*p, ~0 );
+		hline( y, ~0 );
+		vline( x, ~0 );
+		draw_circle( x*p, y*p, r*p, ~0, 0 );
 		a += PI/300.0f;
 	}
 }
