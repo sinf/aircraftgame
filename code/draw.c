@@ -6,6 +6,8 @@
 #include "draw.h"
 #include "lowgfx.h"
 
+#include <emmintrin.h>
+
 int r_resy;
 int r_pitch;
 U32 *r_canvas;
@@ -158,54 +160,65 @@ static int object_is_visible( Real x ) {
 	< REALF( HORZ_VIEW_RANGE/2+MAX_THING_BOUND_R );
 }
 
-static void draw_circle( float cx, float cy, float r, U32 color )
+void draw_circle( float cx, float cy, float r, U32 color )
 {
 	int x0, y0, x1, y1, x, y;
-	float rr = r*r;
 
-	r = MAX( r, 0.525f );
 	x0 = cx - r;
+	x0 = MAX( x0, 0 );
 	x0 &= ~3; // align to 16 byte boundary (aka 4 pixels)
-	y0 = cy - r;
 	x1 = cx + r + 1.0f;
 	x1 = x0 + ( x1 - x0 + 3 & ~3 ); // pad width to multiple of 4
-	y1 = cy + r + 1.0f;
-
-	x0 = MAX( x0, 0 );
-	y0 = MAX( y0, 0 );
 	x1 = MIN( x1, r_resx );
+
+	y0 = cy - r;
+	y0 = MAX( y0, 0 );
+	y1 = cy + r + 1.0f;
 	y1 = MIN( y1, r_resy );
 
-	int skip = r_pitch / 4;
+	int skip = r_pitch >> 2;
 	U32 *dst = r_canvas + y0 * skip;
 
-	float dx0 = x0 + 0.5f - cx;
-	float dy = y0 + 0.5f - cy;
-	float a0 = dx0*dx0;
-	float b = dy*dy;
-	/*
-	__m128 a = _mm_set_ps( dx+3, dx+2, dx+1, dx );
-	__m128 b = _mm_set1_ps( dy );
-	a = _mm_mul_ps( a, a );
-	b = _mm_mul_ps( b, b );
-	*/
+	float dx0s = x0 + 0.5f - cx;
+	float dy0s = y0 + 0.5f - cy;
+
+	static const float data[] = {1,1,1,1,4,4,4,4,8,8,8,8,16,16,16,16,0,1,2,3};
+	__m128 a0, b, dx0, dy, one, c4, c8, c16, rr;
+	rr = _mm_set1_ps( r*r );
+	one = _mm_load_ps( data );
+	c4 = _mm_load_ps( data+4 );
+	c8 = _mm_load_ps( data+8 );
+	c16 = _mm_load_ps( data+12 );
+
+	// (dx0,dy): distance to centre
+	dx0 = _mm_add_ps( _mm_set1_ps( dx0s ), _mm_load_ps( data+16 ) );
+	dy = _mm_set1_ps( dy0s );
+	
+	// (a0,b): squared distance to centre
+	a0 = _mm_mul_ps( dx0, dx0 );
+	b = _mm_mul_ps( dy, dy );
 
 	for( y=y0; y<y1; ++y ) {
 
-		float f = a0 + b;
-		float dx = dx0;
+		__m128 f = _mm_add_ps( a0, b );
+		__m128 dx = dx0;
 
-		for( x=x0; x<x1; ++x ) {
+		for( x=x0; x<x1; x+=4 ) {
 
-			if ( f < rr )
-				dst[x] = color;
+			int m = _mm_movemask_ps( _mm_cmplt_ps( f, rr ) );
+			if ( m & 1 ) dst[x] = color;
+			if ( m & 2 ) dst[x+1] = color;
+			if ( m & 4 ) dst[x+2] = color;
+			if ( m & 8 ) dst[x+3] = color;
 
-			f += 2*dx + 1;
-			dx += 1;
+			f = _mm_add_ps( f, c16 );
+			f = _mm_add_ps( f, _mm_mul_ps( dx, c8 ) );
+			dx = _mm_add_ps( dx, c4 );
 		}
 
-		b += 2*dy + 1;
-		dy += 1;
+		b = _mm_add_ps( b, one );
+		b = _mm_add_ps( b, _mm_add_ps( dy, dy ) );
+		dy = _mm_add_ps( dy, one );
 		dst += skip;
 	}
 }
