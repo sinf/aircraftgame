@@ -161,6 +161,7 @@ static int object_is_visible( Real x ) {
 }
 
 
+// fractional bits in circle coordinates
 #define CIRCLE_FB 2
 
 // x,y,r: 4 bits of subpixel precision
@@ -174,12 +175,16 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
 	x0 = MAX( x0, 0 );
 	x0 &= ~3; // align to 16 byte boundary (aka 4 pixels)
 
-	// !! if (cx==r_resx-1) ,then x0 will be r_resx-4, and since each inner loop writes 8 pixels, the last 4 pixels will overflow to the next scanline:
-	// scanlines need to be padded a little wider
-
 	x1 = cx + r + (1<<p) >> p;
 	x1 = x0 + ( x1 - x0 + 7 & ~7 ); // pad width to multiple of 8
 	x1 = MIN( x1, r_resx );
+
+	if ( x1 == r_resx ) {
+		// since inner loop writes 8 pixels, the last 4 pixels may overflow to the next scanline:
+		// better fix: drop this and add extra padding to scanlines
+		x1 = r_resx;
+		x0 = x1 - 8;
+	}
 
 	y0 = cy - r >> p;
 	y0 = MAX( y0, 0 );
@@ -195,22 +200,23 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
 
 	static const S16 off[] = {0<<p,1<<p,2<<p,3<<p,4<<p,5<<p,6<<p,7<<p};
 	__m128i a0, b, dx0, dy, rr;
-	rr = _mm_set1_epi16( r*r + half ); //2*p fract bits
+	rr = _mm_set1_epi16( r*r + half >> p );
 
 	__m128i one = _mm_srli_epi16( _mm_cmpeq_epi16( one, one ), 15 );
 	__m128i
 	dy_inc = _mm_slli_epi16( one, p ), //1<<p
-	b_inc = _mm_slli_epi16( one, 2*p ), //1<<2p
-	dx_inc = _mm_slli_epi16( one, 3+p ), //8<<p
-	f_inc = _mm_slli_epi16( one, 6+2*p ); //64<<2p
+	dx_inc = _mm_slli_epi16( one, 3+p ); //8<<p
+	__m128i
+	b_inc = dy_inc, //1<<p
+	f_inc = _mm_slli_epi16( one, 6+p ); //64<<p
 
 	// (dx0,dy): distance to centre
 	dx0 = _mm_add_epi16( _mm_set1_epi16( dx0s ), _mm_load_si128( (void*) off ) );
 	dy = _mm_set1_epi16( dy0s );
 
-	// (a0,b): squared distance to centre (2*p fractional bits)
-	a0 = _mm_mullo_epi16( dx0, dx0 );
-	b = _mm_mullo_epi16( dy, dy );
+	// (a0,b): squared distance to centre
+	a0 = _mm_srli_epi16( _mm_mullo_epi16( dx0, dx0 ), p );
+	b = _mm_srli_epi16( _mm_mullo_epi16( dy, dy ), p );
 
 	for( y=y0; y<y1; ++y ) {
 
@@ -229,12 +235,12 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color )
 			}
 
 			f = _mm_add_epi16( f, f_inc );
-			f = _mm_add_epi16( f, _mm_slli_epi16( dx, p + 4 ) );
+			f = _mm_add_epi16( f, _mm_slli_epi16( dx, 4 ) );
 			dx = _mm_add_epi16( dx, dx_inc );
 		}
 
 		b = _mm_add_epi16( b, b_inc );
-		b = _mm_add_epi16( b, _mm_slli_epi16( _mm_add_epi16( dy, dy ), p ) );
+		b = _mm_add_epi16( b, _mm_add_epi16( dy, dy ) );
 		dy = _mm_add_epi16( dy, dy_inc );
 		dst += skip;
 	}
@@ -489,9 +495,10 @@ void render( void )
 		static float a = 0;
 		float
 		x = 50.5f + cosf( a ) * 40,
-		y = 50.5f + sinf( a) * 20;
-		int p = CIRCLE_FB;
-		draw_circle( x*(1<<p), y*(1<<p), 20<<p, 0xFF );
+		y = 50.5f + sinf( a ) * 20,
+		r = 20.0f + cosf( 0.3f * a ) * 15.0f,
+		p = 1<<CIRCLE_FB;
+		draw_circle( x*p, y*p, r*p, 0xFF );
 		a += PI/300.0f;
 	}
 }
