@@ -164,7 +164,7 @@ static int object_is_visible( Real x ) {
 // fractional bits in circle coordinates
 #define CIRCLE_FB 2
 
-void draw_circle( S32 cx, S32 cy, S32 r, U32 color, int sharp )
+void draw_circle( S32 cx, S32 cy, S32 r0, S32 r, U32 color )
 {
 	#define p CIRCLE_FB
 	int x0, y0, x1, y1, x, y;
@@ -181,8 +181,7 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color, int sharp )
 	if ( x1 == r_resx ) {
 		// since inner loop writes 8 pixels, the last 4 pixels may overflow to the next scanline:
 		// better fix: drop this and add extra padding to scanlines
-		x1 = r_resx;
-		x0 = x1 - 8;
+		x0 = x1 - ( x1 - x0 + 7 & ~7 );
 	}
 
 	y0 = cy - r >> p;
@@ -198,12 +197,14 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color, int sharp )
 	S32 dy0s = ( y0 << p ) + half - cy;
 
 	static const S16 off[] = {0<<p,1<<p,2<<p,3<<p,4<<p,5<<p,6<<p,7<<p};
-	__m128i a0, b, dx0, dy, rr, inv_rr;
+	__m128i a0, b, dx0, dy, rr;
 	__m128i zero = _mm_setzero_si128();
-	rr = _mm_set1_epi16( r*r + half >> p );
-	inv_rr = _mm_set1_epi16( (1<<2*p+8+6) / (r*r) );
-
 	__m128i allset = _mm_cmpeq_epi16( allset, allset );
+	rr = _mm_set1_epi16( r*r + half >> p );
+
+	__m128i a_edge = _mm_set1_epi16( r0*r0 >> p );
+	__m128i a_mul = _mm_set1_epi16( (256<<2*p+6) / (r*r - r0*r0) );
+
 	__m128i one = _mm_srli_epi16( allset, 15 );
 	__m128i
 	dy_inc = _mm_slli_epi16( one, p ), //1<<p
@@ -220,8 +221,8 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color, int sharp )
 	a0 = _mm_srli_epi16( _mm_mullo_epi16( dx0, dx0 ), p );
 	b = _mm_srli_epi16( _mm_mullo_epi16( dy, dy ), p );
 
-	// color as 16bit
 	__m128i colx;
+	// color as 16bit
 	colx = _mm_set_epi64x( 0, (U64) color | (U64) color << 32 );
 	colx = _mm_unpacklo_epi8( colx, zero );
 
@@ -236,43 +237,41 @@ void draw_circle( S32 cx, S32 cy, S32 r, U32 color, int sharp )
 			__m128i m = _mm_cmplt_epi16( f, rr );
 			int mi = _mm_movemask_epi8( m );
 
-			__m128i alpha;
-			if ( !sharp ) {
-				alpha = _mm_mullo_epi16( inv_rr, _mm_sub_epi16( rr, f ) );
-				alpha = _mm_srli_epi16( alpha, 6 );
+			if ( mi ) {
+				__m128i alpha;
+				alpha = _mm_sub_epi16( rr, _mm_max_epi16( f, a_edge ) );
+				alpha = _mm_mullo_epi16( alpha, a_mul );
+				alpha = _mm_srli_epi16( alpha, p+6 );
 				alpha = _mm_max_epi16( alpha, zero );
-				alpha = _mm_srli_epi16( alpha, p );
-			} else {
-				alpha = _mm_set1_epi16( 255 );
-			}
 
-			if ( mi ) for( int j=0; j<2; ++j )
-			{
-				__m128i c0, c1, c2, c3, c4, c5, c6, c7, M;
-				void *mem = dst + x + 4*j;
+				for( int j=0; j<2; ++j )
+				{
+					__m128i c0, c1, c2, c3, c4, c5, c6, c7, M;
+					void *mem = dst + x + 4*j;
 
-				__m128i a2, al, ah;
-				a2 = _mm_unpacklo_epi16( alpha, alpha );
-				al = _mm_unpacklo_epi32( a2, a2 );
-				ah = _mm_unpackhi_epi32( a2, a2 );
+					__m128i a2, al, ah;
+					a2 = _mm_unpacklo_epi16( alpha, alpha );
+					al = _mm_unpacklo_epi32( a2, a2 );
+					ah = _mm_unpackhi_epi32( a2, a2 );
 
-				c0 = _mm_load_si128( mem ); // rgb.rgb.rgb.rgb.
-				c1 = _mm_unpacklo_epi8( c0, zero ); // first two pixels as 16bit
-				c2 = _mm_add_epi16( _mm_mullo_epi16( _mm_sub_epi16( colx, c1 ), al ),
-					_mm_slli_epi16( c1, 8 ) );
+					c0 = _mm_load_si128( mem ); // rgb.rgb.rgb.rgb.
+					c1 = _mm_unpacklo_epi8( c0, zero ); // first two pixels as 16bit
+					c2 = _mm_add_epi16( _mm_mullo_epi16( _mm_sub_epi16( colx, c1 ), al ),
+						_mm_slli_epi16( c1, 8 ) );
 
-				c3 = _mm_unpackhi_epi8( c0, zero ); // last two pixels as 16bit
-				c4 = _mm_add_epi16( _mm_mullo_epi16( _mm_sub_epi16( colx, c3 ), ah ),
-					_mm_slli_epi16( c3, 8 ) );
+					c3 = _mm_unpackhi_epi8( c0, zero ); // last two pixels as 16bit
+					c4 = _mm_add_epi16( _mm_mullo_epi16( _mm_sub_epi16( colx, c3 ), ah ),
+						_mm_slli_epi16( c3, 8 ) );
 
-				c6 = _mm_packus_epi16( _mm_srli_epi16( c2, 8 ), _mm_srli_epi16( c4, 8 ) );
+					c6 = _mm_packus_epi16( _mm_srli_epi16( c2, 8 ), _mm_srli_epi16( c4, 8 ) );
 
-				M = _mm_unpacklo_epi16( m, m );
-				c7 = _mm_or_si128( _mm_and_si128( M, c6 ), _mm_andnot_si128( M, c0 ) );
+					M = _mm_unpacklo_epi16( m, m );
+					c7 = _mm_or_si128( _mm_and_si128( M, c6 ), _mm_andnot_si128( M, c0 ) );
 
-				_mm_store_si128( mem, c7 );
-				m = _mm_srli_si128( m, 8 );
-				alpha = _mm_srli_si128( alpha, 8 );
+					_mm_store_si128( mem, c7 );
+					m = _mm_srli_si128( m, 8 );
+					alpha = _mm_srli_si128( alpha, 8 );
+				}
 			}
 
 			f = _mm_add_epi16( f, f_inc );
@@ -301,8 +300,10 @@ void draw_blob( const GfxBlob blob[1] )
 	x = ( r_resx/2 << p ) + ( DREAL_MUL( rx, z ) >> s ),
 	y = ( r_resy/2 << p ) + ( DREAL_MUL( ry, z ) >> s );
 
-	draw_circle( x, y, DREAL_MUL( blob->scale_x, z ) >> s,
-	blob->color, blob->mode == BLOB_SHARP );
+	S32 r1 = DREAL_MUL( blob->scale_x, z ) >> s;
+	S32 r0 = blob->mode == BLOB_FUZZY ? 0 : r1 - ( 1 << p - 1 );
+
+	draw_circle( x, y, r0, r1, blob->color );
 }
 
 void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] )
@@ -491,7 +492,7 @@ static void render_world_fg( void )
 			float xx = r_resx * 0.5f + REALTOF( get_rel_x( x, eye_x ) ) * view_scale;
 			float yy = r_resy * 0.5f + REALTOF( y - eye_y ) * view_scale;
 			float p = 1 << CIRCLE_FB;
-			draw_circle( xx*p, yy*p, p*2.5f, 0xFFFFFF, 1 );
+			draw_circle( xx*p, yy*p, p*2.0f, p*2.5f, 0xFFFFFF );
 		}
 	}
 	
@@ -542,7 +543,7 @@ void render( void )
 		p = 1<<CIRCLE_FB;
 		hline( y, ~0 );
 		vline( x, ~0 );
-		draw_circle( x*p, y*p, r*p, ~0, 0 );
+		draw_circle( x*p, y*p, 0, r*p, ~0 );
 		a += PI/300.0f;
 	}
 }
