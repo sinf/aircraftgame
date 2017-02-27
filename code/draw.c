@@ -1,3 +1,4 @@
+#include <emmintrin.h>
 #include <stdlib.h>
 #include "system.h"
 #include "support.h"
@@ -5,17 +6,15 @@
 #include "models.h"
 #include "draw.h"
 #include "lowgfx.h"
-
-#include <emmintrin.h>
+#include "matrix.h"
 
 int r_resy;
 int r_pitch;
 U32 *r_canvas;
 static Real eye_x=0, eye_y=0;
 #define HORZ_VIEW_RANGE 90
+//#define HORZ_VIEW_RANGE (W_WIDTH*2)
 static const float view_scale = r_resx / HORZ_VIEW_RANGE; //world unit -> pixel
-
-float the_view_mat[16];
 
 ///static struct { S16 r[4], g[4], b[4]; } r_canvas16[MAX_RESY][r_resx/4];
 
@@ -71,12 +70,27 @@ static void vline( unsigned x, U32 c )
 
 Real get_rel_x( Real x, Real x0 )
 {
-	Real c = x - x0;
-	if ( c < -REALF( W_WIDTH/2 ) )
-		c += REALF( W_WIDTH );
-	else if ( c > REALF( W_WIDTH/2 ) )
-		c -= REALF( W_WIDTH );
+	Real
+	c = x - x0,
+	half = REALF( W_WIDTH*0.5f ),
+	w = REALF( W_WIDTH );
+
+	if ( c < -half )
+		c += w;
+	else if ( c > half )
+		c -= w;
+
 	return c;
+}
+
+Real get_draw_x( Real x )
+{
+	return get_rel_x( x, eye_x );
+}
+
+Real get_draw_y( Real y )
+{
+	return y - eye_y;
 }
 
 static void hline_w( float w, U32 c )
@@ -87,7 +101,7 @@ static void hline_w( float w, U32 c )
 
 static void vline_w( float w, U32 c )
 {
-	float p = REALTOF( get_rel_x( REALF( w ), eye_x ) );
+	float p = REALTOF( get_draw_x( REALF( w ) ) );
 	int x = r_resx / 2 + p * view_scale;
 	vline( x, c );
 }
@@ -114,9 +128,8 @@ static void draw_bg( void )
 	for( int y=0; y<r_resy; ++y ) {
 		float q = CLIP( t, 0, 1 );
 		U32 c = pack( lerp( c0, c1, q ) );
-		//U32 c = gray( q );
 		for( int x=0; x<r_resx; ++x )
-			dst[x] = c; // todo: dither
+			dst[x] = c;
 		t += dt;
 		dst += skip;
 	}
@@ -171,41 +184,47 @@ static int object_is_visible( Real x ) {
 }
 
 static S32 current_mvp[16];
+int vertex_data_dim = 3;
 
 void set_mvp_matrix_f( const float m[16] )
 {
 	for( int i=0; i<16; ++i )
 		current_mvp[i] = REALF( m[i] );
 }
+void flip_mvp_matrix_z( void )
+{
+	S32 *m = current_mvp;
+	m[8] = -m[8];
+	m[9] = -m[9];
+	m[10] = -m[10];
+}
 
-static void transform_vertex( S32 out[3], S32 const in[3], S32 const m[16] )
+static void transform_vertex( S32 out[2], S32 const in[3], S32 const m[16] )
 {
 	int i, p = REAL_FRACT_BITS;
-	for( i=0; i<3; ++i ) {
-		out[i] = ( m[0+i]*in[i] + m[4+i]*in[i] + m[8+i]*in[i] >> p ) + m[12+i];
-		//out[i] = ( m[4*i+0]*in[i] + m[4*i+1]*in[i] + m[4*i+2]*in[i] >> p ) + m[4*i+3];
-	}
-	#if 0
-	// eye space to window coords
-	//S32 f = REALF( view_scale );
-	float g = view_scale / ( 1 << p );
-	out[0] = r_resx/2 + out[0] * g; //( DREAL_MUL( out[0], f ) >> p );
-	out[1] = r_resy/2 + out[1] * g; //( DREAL_MUL( out[1], f ) >> p );
-	#endif
+	S32
+	x = in[0],
+	y = in[1],
+	z = vertex_data_dim == 2 ? 0 : in[2];
+
+	for( i=0; i<2; ++i )
+		out[i] = ( m[0+i]*x + m[4+i]*y + m[8+i]*z >> p ) + m[12+i];
 }
 
 static const S32 *get_transformed_vertex( const S32 in[3] )
 {
 	#define CACHE_SIZE 4
 	static S32 const *cache_p[CACHE_SIZE] = {0};
-	static S32 cache_v[CACHE_SIZE][3];
+	static S32 cache_v[CACHE_SIZE][2];
 	static int wr = 0;
 	S32 *out;
 
+#if 1
 	for( int i=0; i<CACHE_SIZE; ++i ) {
 		if ( cache_p[i] == in )
 			return cache_v[i];
 	}
+#endif
 
 	cache_p[wr] = in;
 	out = cache_v[wr];
@@ -216,7 +235,7 @@ static const S32 *get_transformed_vertex( const S32 in[3] )
 	#undef CACHE_SIZE
 }
 
-static S32 edge_setup( S32 u[2], const S32 a[3], const S32 b[3], S32 x0, S32 y0, int p )
+static S32 edge_setup( S32 u[2], const S32 a[2], const S32 b[2], S32 x0, S32 y0, int p )
 {
 	S32 ux, uy;
 	u[0] = ( ux = b[1] - a[1] );
@@ -224,7 +243,7 @@ static S32 edge_setup( S32 u[2], const S32 a[3], const S32 b[3], S32 x0, S32 y0,
 	return (x0-a[0])*ux + (y0-a[1])*uy >> p;
 }
 
-void draw_triangle( const S32 v0[3], const S32 v1[3], const S32 v2[3], U32 color )
+void draw_triangle( const S32 v0[2], const S32 v1[2], const S32 v2[2], U32 color )
 {
 	const int p = REAL_FRACT_BITS;
 	const int skip = r_pitch / 4;
@@ -268,6 +287,7 @@ void draw_triangle( const S32 v0[3], const S32 v1[3], const S32 v2[3], U32 color
 		dst += skip;
 	}
 
+	return;
 	draw_point( x0, y0, 0xFF );
 	draw_point( x1-1, y0, 0xFF );
 	draw_point( x0, y1-1, 0xFF );
@@ -286,21 +306,31 @@ void draw_triangle_t( const S32 v0[3], const S32 v1[3], const S32 v2[3], U32 col
 	draw_triangle( a, b, c, color );
 }
 
-void draw_triangles( const S32 verts[][3], const U8 idx[], int n_idx, U32 color )
+void draw_triangles( const S32 verts[], const U8 idx[], int n_idx, U32 color )
 {
 	int i = 0;
+	int s = vertex_data_dim;
 	do {
-		draw_triangle_t( verts[idx[i]], verts[idx[i+1]], verts[idx[i+2]], color );
+		draw_triangle_t(
+			verts + s*idx[i],
+			verts + s*idx[i+1],
+			verts + s*idx[i+2], color );
 		i += 3;
 	} while ( i < n_idx );
 }
 
-void draw_quads( const S32 verts[][3], const U8 idx[], int n_idx, U32 color )
+void draw_quads( const S32 verts[], const U8 idx[], int n_idx, U32 color )
 {
 	int i = 0;
+	int s = vertex_data_dim;
 	do {
-		draw_triangle_t( verts[idx[i]], verts[idx[i+1]], verts[idx[i+2]], color );
-		draw_triangle_t( verts[idx[i+1]], verts[idx[i+2]], verts[idx[i+3]], color );
+		const S32 *a, *b, *c, *d;
+		a = verts + s * idx[i];
+		b = verts + s * idx[i+1];
+		c = verts + s * idx[i+2];
+		d = verts + s * idx[i+3];
+		draw_triangle_t( a, b, c, color );
+		draw_triangle_t( a, c, d, color );
 		i += 4;
 	} while ( i < n_idx );
 }
@@ -313,7 +343,10 @@ void draw_quads( const S32 verts[][3], const U8 idx[], int n_idx, U32 color )
 // max_alpha: 256 corresponds to 1.0
 void draw_circle( S32 cx, S32 cy, S32 r0, S32 r, U32 color, U32 max_alpha )
 {
+	r = MAX( r, 1 );
+	r0 = MIN( r0, r-1 ); //prevent division by zero
 	#define p CIRCLE_FB
+	
 	int x0, y0, x1, y1, x, y;
 	// x0,y0,x1,y1: integer bounding box of pixels to be processed
 
@@ -350,8 +383,10 @@ void draw_circle( S32 cx, S32 cy, S32 r0, S32 r, U32 color, U32 max_alpha )
 	rr = _mm_set1_epi16( r*r + half >> p );
 
 	int a_bits = 6;
-	__m128i a_edge = _mm_set1_epi16( r0*r0 >> p );
-	__m128i a_mul = _mm_set1_epi16( (max_alpha<<2*p+a_bits) / (U32)(r*r - r0*r0) );
+	__m128i a_edge, a_mul;
+	U32 tmp = (U32)(r*r - r0*r0);
+	a_edge = _mm_set1_epi16( r0*r0 >> p );
+	a_mul = tmp == 0 ? zero : _mm_set1_epi16( (max_alpha<<2*p+a_bits) / tmp );
 
 	__m128i one = _mm_srli_epi16( allset, 15 );
 	__m128i
@@ -437,19 +472,21 @@ void draw_circle( S32 cx, S32 cy, S32 r0, S32 r, U32 color, U32 max_alpha )
 
 void draw_blob( const GfxBlob blob[1] )
 {
-	Real rx = get_rel_x( blob->x, eye_x );
-	Real ry = blob->y - eye_y;
-	Real z = REALF( view_scale );
-
 	int p = CIRCLE_FB;
 	int s = REAL_FRACT_BITS - p;
+	S32 f = REALF( view_scale );
 
-	S32
-	x = ( r_resx/2 << p ) + ( DREAL_MUL( rx, z ) >> s ),
-	y = ( r_resy/2 << p ) + ( DREAL_MUL( ry, z ) >> s );
+	S32 x = (r_resx/2<<p) + ( REAL_MUL( blob->x, f ) >> s );
+	S32 y = (r_resy/2<<p) + ( REAL_MUL( blob->y, f ) >> s );
 
-	S32 r1 = DREAL_MUL( blob->scale_x, z ) >> s;
+	S32 r1 = REAL_MUL( blob->scale_x, f ) >> s + 1; //+1 because blob->scale_x is the diameter
 	S32 r0 = blob->mode == BLOB_FUZZY ? 0 : r1 - ( 1 << p - 1 );
+
+	int ri = ( r1 >> p ) + 1;
+	int xi = abs( ( x >> p ) - r_resx/2 ) - ri;
+	int yi = abs( ( y >> p ) - r_resy/2 ) - ri;
+	if ( xi > r_resx/2 || yi > r_resy/2 )
+		return;
 
 	draw_circle( x, y, r0, r1, blob->color, 256 );
 }
@@ -493,8 +530,8 @@ static GfxBlob get_particle_blob( Thing *thing )
 	
 	blob.mode = BLOB_FUZZY;
 	blob.color = RGBA_32( g, g, g, a );
-	blob.x = thing->phys.pos.x;
-	blob.y = thing->phys.pos.y;
+	blob.x = get_draw_x( thing->phys.pos.x );
+	blob.y = get_draw_y( thing->phys.pos.y );
 	blob.scale_x = w;
 	blob.scale_y = h;
 	
@@ -507,6 +544,24 @@ static GfxBlob get_particle_blob( Thing *thing )
 	return blob;
 }
 
+static void draw_xyz_axis( float mat[16], float scale, int g )
+{
+	float org[3];
+	scale /= (float) g;
+	m_mult_v3( org, mat, 0, 0, 0 );
+	draw_point( org[0], org[1], 0xFF );
+	for( int i=0; i<g; ++i ) {
+		float t = scale * ( i + 1 );
+		float a[3], b[3], c[3];
+		m_mult_v3( a, mat, t, 0, 0 );
+		m_mult_v3( b, mat, 0, t, 0 );
+		m_mult_v3( c, mat, 0, 0, t );
+		draw_point( c[0], c[1], 0xFF0000 );
+		draw_point( b[0], b[1], 0xFF00 );
+		draw_point( a[0], a[1], 0xFF );
+	}
+}
+
 static void render_world_fg( void )
 {
 	#define MAX_BLOBS 32000
@@ -517,15 +572,16 @@ static void render_world_fg( void )
 	for( n=0; n<WORLD.num_things; n++ )
 	{
 		Thing *t = WORLD.things + n;
-		Real x = t->phys.pos.x;
-		Real y = t->phys.pos.y;
-		Real yaw = t->angle;
+		Real x = get_draw_x( t->phys.pos.x );
+		Real y = get_draw_y( t->phys.pos.y );
+		Real yaw = -t->angle;
 		Real roll = 0;
 		ModelID mdl = BAD_MODEL_ID;
 		int is_heli = 0;
-		
-		if ( !object_is_visible( x ) )
+
+		if ( abs( x ) > REALF( HORZ_VIEW_RANGE*0.5+MAX_THING_BOUND_R ) ) {
 			continue;
+		}
 		
 		switch( t->type )
 		{
@@ -590,57 +646,48 @@ static void render_world_fg( void )
 		
 		if ( mdl != BAD_MODEL_ID )
 		{
-			mat_push();
-			mat_translate( x, y, 0 );
+			ms_push();
+			ms_translate_r( x, y, 0 );
 			{
-				mat_push();
-				mat_rotate( 2, REALTOF( yaw ) );
+				ms_push();
+				//if ( t == WORLD.player ) ms_scale( 8, 8, 8 );
+				ms_rotate( 2, REALTOF( yaw ) );
 				{
-					mat_push();
+					ms_push();
 					{
-						mat_rotate( 0, REALTOF( roll ) );
+						ms_rotate( 0, REALTOF( roll ) );
 						push_model_mat( mdl );
+						draw_xyz_axis( ms_cur, 3, 4 );
 					}
-					mat_pop();
+					ms_pop();
 					
 					if ( t->type == T_AIRCRAFT && !is_heli && t->data.ac.throttle_on )
 						push_model_mat( M_AIRCRAFT_FLAME );
 				}
-				mat_pop();
+				ms_pop();
 				
 				if ( is_heli ) {
-					mat_rotate( 2, REALTOF( yaw ) );
-					mat_rotate( 0, REALTOF( roll ) );
+					ms_rotate( 2, REALTOF( yaw ) );
+					ms_rotate( 0, REALTOF( roll ) );
 					
 					/* The main rotor */
-					mat_push();
+					ms_push();
 					{
-						mat_translate( REALF(0.2), REALF(0.1), 0 );
-						mat_rotate( 1, REALTOF( 16 * t->age % REALF( 2 * PI ) ) );
+						ms_translate( 0.2, 0.1, 0 );
+						ms_rotate( 1, REALTOF( 16 * t->age % REALF( 2 * PI ) ) );
 						push_model_mat( M_HELI_ROTOR );
 					}
-					mat_pop();
+					ms_pop();
 					
 					/* Small rotor in the rear */
-					mat_translate( REALF(-1.2), REALF(0.2), 0 );
-					mat_rotate( 2, REALTOF( -16 * t->age % REALF( 2 * PI ) ) );
-					mat_scale( 0.5, 0.5, 0.5 );
-					mat_rotate( 0, -PI/2 );
+					ms_translate( -1.2, 0.2, 0 );
+					ms_rotate( 2, REALTOF( -16 * t->age % REALF( 2 * PI ) ) );
+					ms_scale( 0.5, 0.5, 0.5 );
+					ms_rotate( 0, -PI/2 );
 					push_model_mat( M_HELI_ROTOR );
 				}
 			}
-			mat_pop();
-		}
-		else
-		{
-		}
-
-		if ( mdl != BAD_MODEL_ID ) {
-			// make all entities visible as a dot
-			float xx = r_resx * 0.5f + REALTOF( get_rel_x( x, eye_x ) ) * view_scale;
-			float yy = r_resy * 0.5f + REALTOF( y - eye_y ) * view_scale;
-			float p = 1 << CIRCLE_FB;
-			draw_circle( xx*p, yy*p, p*2.0f, p*2.5f, 0xFFFFFF, 256 );
+			ms_pop();
 		}
 	}
 	
@@ -663,13 +710,6 @@ void render( void )
 		eye_y = WORLD.player->phys.pos.y;
 	}
 
-	mat_push();
-	//mat_translate( r_resx*0.5f, r_resy*0.5f, 0 );
-	mat_scale( view_scale, view_scale, 1 );
-	//mat_translate( 1, 1, 0 );
-	mat_store( the_view_mat );
-	mat_pop();
-
 	draw_bg();
 	draw_water();
 
@@ -682,32 +722,53 @@ void render( void )
 	hline_w( W_WATER_DEATH_LEVEL, 0x1F003F );
 	hline_w( W_WATER_LEVEL + W_HEIGHT, 0x1f0000 );
 
+	#if 0
 	#define COORD_SCALE 1
 	#define P_SCREEN_RATIO (r_resy/(float)r_resx)
-	#define W (r_resx/HORZ_VIEW_RANGE)
+	#define W (HORZ_VIEW_RANGE)
 	#define P_RIGHT (W/2.0)
-	#define P_LEFT (-P_RIGHT)
+	#define P_LEFT -P_RIGHT
 	#define P_BOTTOM ( P_SCREEN_RATIO * W / 2.0 )
-	#define P_TOP (-P_BOTTOM)
+	#define P_TOP -P_BOTTOM
 	#define P_NEAR -128.0
 	#define P_FAR 128.0
-	float m[] = {
+	float prj[] = {
 		2.0 / ( P_RIGHT - P_LEFT ) * COORD_SCALE, 0, 0, 0,
 	0, 2.0 / ( P_TOP - P_BOTTOM ) * COORD_SCALE, 0, 0,
 	0, 0, -1.0 / ( P_FAR - P_NEAR ) * COORD_SCALE, 0,
 	-( P_RIGHT + P_LEFT ) / ( P_RIGHT - P_LEFT ), -( P_TOP + P_BOTTOM ) / ( P_TOP - P_BOTTOM ), -P_NEAR / ( P_FAR - P_NEAR ), 1
 	};
+	float scl[16], tr[16];
+	m_translate( tr, 0, 0, 0 );
+	m_scale( scl, view_scale, view_scale, 1 );
+	m_copy( the_view_mat, tr );
+	//m_mult( the_view_mat, tr, scl );
+	#endif
 
-	memcpy( the_view_mat, m, sizeof(m) );
-
-	mat_push();
-	mat_translate( -eye_x, -eye_y, 0 );
+	ms_push();
+	ms_translate( r_resx*0.5f, r_resy*0.5f, 0 );
+	ms_scale( view_scale, view_scale, 1 );
+	//ms_translate_r( -eye_x, -eye_y, 0 );
+	// ms_cur is now the modelview projection matrix (world coords -> pixels)
 
 	render_world_fg();
 
-	mat_pop();
-
 	if ( 1 ) {
+		float a[3], b[3], c[3];
+		ms_push();
+		ms_translate_r( get_draw_x(0), get_draw_y(0), 0 );
+		m_mult_v3( a, ms_cur, 0, 0, 0 );
+		m_mult_v3( b, ms_cur, 3, 0, 0 );
+		m_mult_v3( c, ms_cur, 0, 3, 0 );
+		ms_pop();
+		draw_point( a[0], a[1], 0xFF );
+		draw_point( b[0], b[1], 0xFF );
+		draw_point( c[0], c[1], 0xFF );
+	}
+
+	ms_pop();
+
+	if ( 0 ) {
 		static float a = 0;
 		float
 		x = 50.5f + cosf( a ) * 40,
@@ -720,7 +781,7 @@ void render( void )
 		a += PI/300.0f;
 	}
 
-	if ( 1 ) {
+	if ( 0 ) {
 		float k = view_scale * 20;
 		S32 verts[][3] = {
 			#define R3(x,y,z) {REALF(r_resx/2+x*k),REALF(r_resy/2+y*k),REALF(z)}
@@ -732,5 +793,23 @@ void render( void )
 		set_mvp_matrix_f( m );
 		draw_triangle_t( verts[0], verts[1], verts[2], 0 );
 	}
+}
+
+static void pr_mat( const char *s, float m[16] )
+{
+	printf( "%s", s );
+	for( int i=0; i<4; ++i )
+		printf( "%9.2e %9.2e %9.2e %9.2e\n", m[i], m[i+4], m[i+8], m[i+12] );
+}
+
+void test_mmul( void )
+{
+	float t[16], s[16], a[16], b[16];
+	m_translate( t, 1, 1, 1 );
+	m_scale( s, 2, 2, 2 );
+	m_mult( a, s, t );
+	m_mult( b, t, s );
+	pr_mat( "SxT=\n", a ); // all values 2
+	pr_mat( "TxS=\n", b ); // contains both 2 and 1 values
 }
 
