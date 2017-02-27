@@ -13,7 +13,11 @@ int r_pitch;
 U32 *r_canvas;
 static Real eye_x=0, eye_y=0;
 #define HORZ_VIEW_RANGE 90
-static float view_scale = r_resx / HORZ_VIEW_RANGE; //world unit -> pixel
+static const float view_scale = r_resx / HORZ_VIEW_RANGE; //world unit -> pixel
+
+float the_view_mat[16];
+
+///static struct { S16 r[4], g[4], b[4]; } r_canvas16[MAX_RESY][r_resx/4];
 
 typedef struct { float r, g, b; } Color;
 
@@ -88,6 +92,12 @@ static void vline_w( float w, U32 c )
 	vline( x, c );
 }
 
+static void draw_point( U32 x, U32 y, U32 c )
+{
+	if ( x < r_resx && y < r_resy )
+		r_canvas[r_pitch / 4 * y + x] = c;
+}
+
 static void draw_bg( void )
 {
 	Color c0 = {0.694, 0.784, 0.804};
@@ -160,11 +170,148 @@ static int object_is_visible( Real x ) {
 	< REALF( HORZ_VIEW_RANGE/2+MAX_THING_BOUND_R );
 }
 
+static S32 current_mvp[16];
 
-// fractional bits in circle coordinates
+void set_mvp_matrix_f( const float m[16] )
+{
+	for( int i=0; i<16; ++i )
+		current_mvp[i] = REALF( m[i] );
+}
+
+static void transform_vertex( S32 out[3], S32 const in[3], S32 const m[16] )
+{
+	int i, p = REAL_FRACT_BITS;
+	for( i=0; i<3; ++i ) {
+		out[i] = ( m[0+i]*in[i] + m[4+i]*in[i] + m[8+i]*in[i] >> p ) + m[12+i];
+		//out[i] = ( m[4*i+0]*in[i] + m[4*i+1]*in[i] + m[4*i+2]*in[i] >> p ) + m[4*i+3];
+	}
+	#if 0
+	// eye space to window coords
+	//S32 f = REALF( view_scale );
+	float g = view_scale / ( 1 << p );
+	out[0] = r_resx/2 + out[0] * g; //( DREAL_MUL( out[0], f ) >> p );
+	out[1] = r_resy/2 + out[1] * g; //( DREAL_MUL( out[1], f ) >> p );
+	#endif
+}
+
+static const S32 *get_transformed_vertex( const S32 in[3] )
+{
+	#define CACHE_SIZE 4
+	static S32 const *cache_p[CACHE_SIZE] = {0};
+	static S32 cache_v[CACHE_SIZE][3];
+	static int wr = 0;
+	S32 *out;
+
+	for( int i=0; i<CACHE_SIZE; ++i ) {
+		if ( cache_p[i] == in )
+			return cache_v[i];
+	}
+
+	cache_p[wr] = in;
+	out = cache_v[wr];
+	wr = ( wr + 1 ) % CACHE_SIZE;
+
+	transform_vertex( out, in, current_mvp );
+	return out;
+	#undef CACHE_SIZE
+}
+
+static S32 edge_setup( S32 u[2], const S32 a[3], const S32 b[3], S32 x0, S32 y0, int p )
+{
+	S32 ux, uy;
+	u[0] = ( ux = b[1] - a[1] );
+	u[1] = ( uy = a[0] - b[0] );
+	return (x0-a[0])*ux + (y0-a[1])*uy >> p;
+}
+
+void draw_triangle( const S32 v0[3], const S32 v1[3], const S32 v2[3], U32 color )
+{
+	const int p = REAL_FRACT_BITS;
+	const int skip = r_pitch / 4;
+
+	S32 u0[2], u1[2], u2[2];
+	S32 d0, d1, d2;
+	S32 x0, y0, x1, y1, x, y;
+	U32 *dst;
+
+	x0 = MIN( MIN( v0[0], v1[0] ), v2[0] ) >> p;
+	y0 = MIN( MIN( v0[1], v1[1] ), v2[1] ) >> p;
+	x1 = ( MAX( MAX( v0[0], v1[0] ), v2[0] ) >> p ) + 1;
+	y1 = ( MAX( MAX( v0[1], v1[1] ), v2[1] ) >> p ) + 1;
+	x0 = MAX( x0, 0 );
+	y0 = MAX( y0, 0 );
+	x1 = MIN( x1, r_resx );
+	y1 = MIN( y1, r_resy );
+	dst = r_canvas + y0 * skip;
+
+	S32 x0p = x0 << p, y0p = y0 << p;
+	d0 = edge_setup( u0, v0, v1, x0p, y0p, p );
+	d1 = edge_setup( u1, v1, v2, x0p, y0p, p );
+	d2 = edge_setup( u2, v2, v0, x0p, y0p, p );
+
+	for( y=y0; y<y1; ++y ) {
+		S32 d0_x0=d0, d1_x0=d1, d2_x0=d2;
+		for( x=x0; x<x1; ++x ) {
+			int s0 = d0 > 0;
+			int s1 = d1 > 0;
+			int s2 = d2 > 0;
+			if ( s0 == s1 && s1 == s2 ) {
+				dst[x] = color;
+			}
+			d0 += u0[0];
+			d1 += u1[0];
+			d2 += u2[0];
+		}
+		d0 = d0_x0 + u0[1];
+		d1 = d1_x0 + u1[1];
+		d2 = d2_x0 + u2[1];
+		dst += skip;
+	}
+
+	draw_point( x0, y0, 0xFF );
+	draw_point( x1-1, y0, 0xFF );
+	draw_point( x0, y1-1, 0xFF );
+	draw_point( x1-1, y1-1, 0xFF );
+	draw_point( v0[0]>>p, v0[1]>>p, 0xFF00 );
+	draw_point( v1[0]>>p, v1[1]>>p, 0xD600 );
+	draw_point( v2[0]>>p, v2[1]>>p, 0x8000 );
+}
+
+void draw_triangle_t( const S32 v0[3], const S32 v1[3], const S32 v2[3], U32 color )
+{
+	const S32 *a, *b, *c;
+	a = get_transformed_vertex( v0 );
+	b = get_transformed_vertex( v1 );
+	c = get_transformed_vertex( v2 );
+	draw_triangle( a, b, c, color );
+}
+
+void draw_triangles( const S32 verts[][3], const U8 idx[], int n_idx, U32 color )
+{
+	int i = 0;
+	do {
+		draw_triangle_t( verts[idx[i]], verts[idx[i+1]], verts[idx[i+2]], color );
+		i += 3;
+	} while ( i < n_idx );
+}
+
+void draw_quads( const S32 verts[][3], const U8 idx[], int n_idx, U32 color )
+{
+	int i = 0;
+	do {
+		draw_triangle_t( verts[idx[i]], verts[idx[i+1]], verts[idx[i+2]], color );
+		draw_triangle_t( verts[idx[i+1]], verts[idx[i+2]], verts[idx[i+3]], color );
+		i += 4;
+	} while ( i < n_idx );
+}
+
+// fractional bits in circle coordinates (cx,cy,r0,r)
 #define CIRCLE_FB 2
 
-void draw_circle( S32 cx, S32 cy, S32 r0, S32 r, U32 color )
+// r0: interior radius
+// r1: exterior radius
+// max_alpha: 256 corresponds to 1.0
+void draw_circle( S32 cx, S32 cy, S32 r0, S32 r, U32 color, U32 max_alpha )
 {
 	#define p CIRCLE_FB
 	int x0, y0, x1, y1, x, y;
@@ -202,8 +349,9 @@ void draw_circle( S32 cx, S32 cy, S32 r0, S32 r, U32 color )
 	__m128i allset = _mm_cmpeq_epi16( allset, allset );
 	rr = _mm_set1_epi16( r*r + half >> p );
 
+	int a_bits = 6;
 	__m128i a_edge = _mm_set1_epi16( r0*r0 >> p );
-	__m128i a_mul = _mm_set1_epi16( (256<<2*p+6) / (r*r - r0*r0) );
+	__m128i a_mul = _mm_set1_epi16( (max_alpha<<2*p+a_bits) / (U32)(r*r - r0*r0) );
 
 	__m128i one = _mm_srli_epi16( allset, 15 );
 	__m128i
@@ -241,12 +389,12 @@ void draw_circle( S32 cx, S32 cy, S32 r0, S32 r, U32 color )
 				__m128i alpha;
 				alpha = _mm_sub_epi16( rr, _mm_max_epi16( f, a_edge ) );
 				alpha = _mm_mullo_epi16( alpha, a_mul );
-				alpha = _mm_srli_epi16( alpha, p+6 );
-				alpha = _mm_max_epi16( alpha, zero );
+				alpha = _mm_srli_epi16( alpha, p+a_bits );
+				//alpha = _mm_max_epi16( alpha, zero );
 
 				for( int j=0; j<2; ++j )
 				{
-					__m128i c0, c1, c2, c3, c4, c5, c6, c7, M;
+					__m128i c0, c1, c2, c3, c4, c6, c7, M;
 					void *mem = dst + x + 4*j;
 
 					__m128i a2, al, ah;
@@ -303,7 +451,7 @@ void draw_blob( const GfxBlob blob[1] )
 	S32 r1 = DREAL_MUL( blob->scale_x, z ) >> s;
 	S32 r0 = blob->mode == BLOB_FUZZY ? 0 : r1 - ( 1 << p - 1 );
 
-	draw_circle( x, y, r0, r1, blob->color );
+	draw_circle( x, y, r0, r1, blob->color, 256 );
 }
 
 void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] )
@@ -492,7 +640,7 @@ static void render_world_fg( void )
 			float xx = r_resx * 0.5f + REALTOF( get_rel_x( x, eye_x ) ) * view_scale;
 			float yy = r_resy * 0.5f + REALTOF( y - eye_y ) * view_scale;
 			float p = 1 << CIRCLE_FB;
-			draw_circle( xx*p, yy*p, p*2.0f, p*2.5f, 0xFFFFFF );
+			draw_circle( xx*p, yy*p, p*2.0f, p*2.5f, 0xFFFFFF, 256 );
 		}
 	}
 	
@@ -515,6 +663,13 @@ void render( void )
 		eye_y = WORLD.player->phys.pos.y;
 	}
 
+	mat_push();
+	//mat_translate( r_resx*0.5f, r_resy*0.5f, 0 );
+	mat_scale( view_scale, view_scale, 1 );
+	//mat_translate( 1, 1, 0 );
+	mat_store( the_view_mat );
+	mat_pop();
+
 	draw_bg();
 	draw_water();
 
@@ -526,6 +681,24 @@ void render( void )
 	hline_w( W_WATER_LEVEL + W_WATER_DEPTH, 0x7F0000 );
 	hline_w( W_WATER_DEATH_LEVEL, 0x1F003F );
 	hline_w( W_WATER_LEVEL + W_HEIGHT, 0x1f0000 );
+
+	#define COORD_SCALE 1
+	#define P_SCREEN_RATIO (r_resy/(float)r_resx)
+	#define W (r_resx/HORZ_VIEW_RANGE)
+	#define P_RIGHT (W/2.0)
+	#define P_LEFT (-P_RIGHT)
+	#define P_BOTTOM ( P_SCREEN_RATIO * W / 2.0 )
+	#define P_TOP (-P_BOTTOM)
+	#define P_NEAR -128.0
+	#define P_FAR 128.0
+	float m[] = {
+		2.0 / ( P_RIGHT - P_LEFT ) * COORD_SCALE, 0, 0, 0,
+	0, 2.0 / ( P_TOP - P_BOTTOM ) * COORD_SCALE, 0, 0,
+	0, 0, -1.0 / ( P_FAR - P_NEAR ) * COORD_SCALE, 0,
+	-( P_RIGHT + P_LEFT ) / ( P_RIGHT - P_LEFT ), -( P_TOP + P_BOTTOM ) / ( P_TOP - P_BOTTOM ), -P_NEAR / ( P_FAR - P_NEAR ), 1
+	};
+
+	memcpy( the_view_mat, m, sizeof(m) );
 
 	mat_push();
 	mat_translate( -eye_x, -eye_y, 0 );
@@ -543,8 +716,21 @@ void render( void )
 		p = 1<<CIRCLE_FB;
 		hline( y, ~0 );
 		vline( x, ~0 );
-		draw_circle( x*p, y*p, 0, r*p, ~0 );
+		draw_circle( x*p, y*p, 0, r*p, ~0, 128 );
 		a += PI/300.0f;
+	}
+
+	if ( 1 ) {
+		float k = view_scale * 20;
+		S32 verts[][3] = {
+			#define R3(x,y,z) {REALF(r_resx/2+x*k),REALF(r_resy/2+y*k),REALF(z)}
+			R3( 0.2, 0.7, 0 ),
+			R3( 0.8, 0.3, 0 ),
+			R3( 0.1, 0.15, 0 )
+		};
+		float m[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+		set_mvp_matrix_f( m );
+		draw_triangle_t( verts[0], verts[1], verts[2], 0 );
 	}
 }
 

@@ -7,7 +7,7 @@
 
 enum { MAT_STACK_SIZE = 32 };
 static float the_matrix_stack[MAT_STACK_SIZE][16] = {{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}};
-static float *the_modelview_mat = &the_matrix_stack[0][0];
+float *the_modelview_mat = &the_matrix_stack[0][0];
 
 /* Computes M*T where T is the translation matrix that contains tx,ty,tz */
 static void m_translate( float m[16], float tx, float ty, float tz )
@@ -17,9 +17,21 @@ static void m_translate( float m[16], float tx, float ty, float tz )
 	m[14] += m[2]*tx + m[6]*ty + m[10]*tz;
 	m[15] += m[3]*tx + m[7]*ty + m[11]*tz;
 }
-void mat_translate( float tx, float ty, float tz )
+void mat_translate_f( float tx, float ty, float tz )
 {
 	m_translate( the_modelview_mat, tx, ty, tz );
+}
+void m_mult( float c[16], const float a[16], const float b[16] )
+{
+	int i, j, k;
+	for( i=0; i<4; ++i ) {
+		for( j=0; j<4; ++j ) {
+			float s = 0;
+			for( k=0; k<4; ++k )
+				s += a[i*4+k] * b[k*4+j];
+			c[i*4+j] = s;
+		}
+	}
 }
 void mat_rotate( int axis, float angle )
 {
@@ -112,59 +124,43 @@ void mat_pop( void )
 	the_modelview_mat -= 16;
 	ASSERT( the_modelview_mat >= the_matrix_stack[0] );
 }
+void mat_load( float m[16] )
+{
+	memcpy( the_modelview_mat, m, sizeof( float ) * 16 );
+}
 void mat_store( float dst[16] )
 {
 	memcpy( dst, the_modelview_mat, sizeof( float ) * 16 );
 }
 
+typedef S32 (Vertex[3]);
 void draw_models( unsigned num_models, ModelID m, const float *matr )
 {
-	int wire = 0;
-	U8 num_indices = MODEL_INFO[m].num_indices;
+	//int wire = 0;
+	int num_indices = MODEL_INFO[m].num_indices;
 	U8 const *index_p = model_indices_unpacked[m];
+	S32 const *verts = model_vertices_unpacked[m];
 	unsigned n;
-	/*
+
+	//use_color( MODEL_INFO[m].color );
+	//glVertexPointer( MODEL_DIMENSIONS( MODEL_INFO[m] ), GL_INT, 0, model_vertices_unpacked[m] );
+	//if ( wire ) glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 	
-	use_color( MODEL_INFO[m].color );
-	glVertexPointer( MODEL_DIMENSIONS( MODEL_INFO[m] ), GL_INT, 0, model_vertices_unpacked[m] );
-	
-	glPushMatrix();
-	
-	if ( wire ) glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-	
-	#if 0
-	glDrawElementsInstancedBaseVertex( GL_QUADS, num_indices, GL_UNSIGNED_BYTE, index_p, num_models, 0 );
-	glDrawElementsInstancedBaseVertex( GL_QUADS, num_indices, GL_UNSIGNED_BYTE, index_p, num_models, MODEL_INFO[m].num_verts );
-	#else
 	for( n=0; n<num_models; n++ ) {
-		glLoadMatrixf( matr + 16 * n );
-		glDrawElements( GL_QUADS, num_indices, GL_UNSIGNED_BYTE, index_p );
-		if ( MODEL_INFO[m].flags & F_MIRROR ) {
-			#if USE_NEW_GL
-			glDrawElementsBaseVertex( GL_QUADS, num_indices, GL_UNSIGNED_BYTE, index_p, MODEL_INFO[m].num_verts );
-			#else
-			glScalef( 1, 1, -1 );
-			glDrawElements( GL_QUADS, num_indices, GL_UNSIGNED_BYTE, index_p );
-			#endif
+		float *mat = matr + 16*n;
+		set_mvp_matrix_f( mat );
+		draw_quads( (const Vertex*) verts, index_p, num_indices, 0 );
+
+		//glDrawElements( GL_QUADS, num_indices, GL_UNSIGNED_BYTE, index_p );
+		if ( 0 ) { //MODEL_INFO[m].flags & F_MIRROR ) {
+			mat_push();
+			mat_load( mat );
+			mat_scale( 1, 1, -1 );
+			set_mvp_matrix_f( the_modelview_mat );
+			draw_quads( (const Vertex*) verts, index_p, num_indices, 0 );
+			mat_pop();
 		}
 	}
-	#endif
-	
-	if ( wire ) glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
-	
-	glPopMatrix();
-	*/
-}
-
-void draw_triangle_strip( unsigned num_verts, const GfxVertex verts[] )
-{
-	/*
-	glEnableClientState( GL_COLOR_ARRAY );
-	glColorPointer( 4, GL_UNSIGNED_BYTE, sizeof( GfxVertex ), &verts[0].color );
-	glVertexPointer( 2, GL_FLOAT, sizeof( GfxVertex ), &verts[0].x );
-	glDrawArrays( GL_TRIANGLE_STRIP, 0, num_verts );
-	glDisableClientState( GL_COLOR_ARRAY );
-	*/
 }
 
 #define MAX_MODEL_INST 512
@@ -175,7 +171,8 @@ void push_model_mat( ModelID m )
 {
 	if ( model_inst_count[m] < MAX_MODEL_INST ) {
 		unsigned i = model_inst_count[m]++;
-		mat_store( model_inst_matr[m][i] );
+		m_mult( model_inst_matr[m][i], the_modelview_mat, the_view_mat );
+		//mat_store( model_inst_matr[m][i] );
 	}
 }
 
