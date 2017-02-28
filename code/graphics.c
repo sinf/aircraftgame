@@ -54,66 +54,7 @@ const float COMMON_MATRICES[2][16] = {
 128 -> 6.5
 */
 
-#define DRAW_CLOUDS 1
-#define NUM_CLOUD_BLOBS (50*12)
-static GfxBlob cloud_blobs[NUM_CLOUD_BLOBS];
-
-static void generate_one_cloud( GfxBlob out[], unsigned num_blobs )
-{
-	const Real max_rotation = REALF( RADIANS( 360 ) );
-	const DReal min_step = REALF( 2.0 );
-	const DReal max_step = REALF( 5.0 );
-	const Real tau = REALF( 2 * PI );
-	Real r = REALF( 10.0 / 32.0 ) * num_blobs;
-	unsigned blob = 0;
-	Vec2 p;
-	Real a;
-	
-	const unsigned g = 220; /* 220 + prng_next() % 32; */
-	
-	p.x = prng_next() % REALF( W_WIDTH );
-	p.y = REALF( W_WATER_LEVEL - W_HEIGHT + 5 );
-	a = prng_next() % tau;
-	
-	for( blob=0; blob<num_blobs; blob++ )
-	{
-		DReal step_length = min_step + prng_next() % ( max_step - min_step );
-		Vec2 dir = v_sincos( a = ( a + prng_next() % max_rotation - max_rotation / 2 + tau ) % tau );
-		
-		out[blob].mode = BLOB_FUZZY;
-		out[blob].color = RGBA_32( g, g, g, 40 );
-		out[blob].x = p.x;
-		out[blob].y = p.y;
-		out[blob].scale_x = r;
-		out[blob].scale_y = r;
-		
-		dir.y >>= 1;
-		p = v_addmul( p, dir, step_length );
-		r -= prng_next() % REALF( 0.5 );
-	}
-}
-
-static void generate_clouds( void )
-{
-	#if 1
-	GfxBlob *blobs = cloud_blobs;
-	unsigned blobs_left = NUM_CLOUD_BLOBS;
-	
-	do {
-		/* s:
-		when value is small there will be lots of small and fragmented clouds
-		when value is large there will be only few clouds but they are BIG!
-		*/
-		unsigned s = MIN( blobs_left, 30 + prng_next() % 20 );
-		
-		generate_one_cloud( blobs, s );
-		blobs += s;
-		blobs_left -= s;
-	} while( blobs_left );
-	#else
-	generate_one_cloud( cloud_blobs, NUM_CLOUD_BLOBS );
-	#endif
-}
+void generate_clouds( void );
 
 void setup2D( void )
 {

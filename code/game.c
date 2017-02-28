@@ -5,9 +5,9 @@
 #define _GAME_INTERNALS
 #include "game.h"
 
-#define ENABLE_GODMODE 1
+#define ENABLE_GODMODE 0
 #define ENABLE_ENEMY_AIRCRAFT 1
-#define DISARM_ENEMIES 1
+#define DISARM_ENEMIES 0
 
 /*
 For each thing type:
@@ -581,8 +581,9 @@ static void update_water( Water w[1] )
 		right = cur_z[(1+n)%WATER_RESOL];
 		vel_y = REAL_DIV( abs( mid - old_mid ), REALF( W_TIMESTEP ) );
 		
+		#if 1
 		/* Add particle effects if vertical velocity of the surface exceeds some thresholds */
-		if ( vel_y > REALF( 8 ) ) {
+		if ( vel_y > REALF( 10 ) ) {
 			Vec2 pos;
 			pos.x = world_x + ( prng_next() & REAL_FRACT_MASK );
 			pos.y = REALF( W_WATER_LEVEL ) + mid;
@@ -595,6 +596,7 @@ static void update_water( Water w[1] )
 				add_particle( pos, 8, 4, PT_WATER1 );
 			}
 		}
+		#endif
 		
 		new_z[n] = 2*mid - old_mid + REAL_MUL( c, left + right - 2*mid );
 		new_z[n] = REAL_MUL( REALF( WATER_DAMPING_FACTOR ), new_z[n] );

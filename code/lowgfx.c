@@ -12,6 +12,7 @@ void draw_models( unsigned num_models, ModelID m, const float *matr )
 	int num_indices = MODEL_INFO[m].num_indices;
 	U8 const *index_p = model_indices_unpacked[m];
 	S32 const *verts = model_vertices_unpacked[m];
+	U32 color = MODEL_INFO[m].color;
 	unsigned n;
 
 	//use_color( MODEL_INFO[m].color );
@@ -24,11 +25,11 @@ void draw_models( unsigned num_models, ModelID m, const float *matr )
 		const float *mat = matr + 16*n;
 
 		set_mvp_matrix_f( mat );
-		draw_quads( verts, index_p, num_indices, 0 );
+		draw_quads( verts, index_p, num_indices, color );
 
 		if ( MODEL_INFO[m].flags & F_MIRROR ) {
 			flip_mvp_matrix_z();
-			draw_quads( verts, index_p, num_indices, 0 );
+			draw_quads( verts, index_p, num_indices, color );
 		}
 	}
 }

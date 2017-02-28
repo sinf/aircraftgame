@@ -20,6 +20,70 @@ static const float view_scale = r_resx / HORZ_VIEW_RANGE; //world unit -> pixel
 
 typedef struct { float r, g, b; } Color;
 
+#define DRAW_CLOUDS 1
+#define NUM_CLOUD_BLOBS (50*12)
+static GfxBlob cloud_blobs[NUM_CLOUD_BLOBS];
+
+static void generate_one_cloud( GfxBlob out[], unsigned num_blobs )
+{
+	const Real max_rotation = REALF( RADIANS( 360 ) );
+	const DReal min_step = REALF( 2.0 );
+	const DReal max_step = REALF( 5.0 );
+	const Real tau = REALF( 2 * PI );
+	Real r = REALF( 10.0 / 32.0 ) * num_blobs;
+	unsigned blob = 0;
+	Vec2 p;
+	Real a;
+	
+	const unsigned g = 220; /* 220 + prng_next() % 32; */
+	
+	p.x = prng_next() % REALF( W_WIDTH );
+	p.y = REALF( W_WATER_LEVEL - W_HEIGHT + 5 );
+	a = prng_next() % tau;
+	
+	for( blob=0; blob<num_blobs; blob++ )
+	{
+		DReal step_length = min_step + prng_next() % ( max_step - min_step );
+		Vec2 dir = v_sincos( a = ( a + prng_next() % max_rotation - max_rotation / 2 + tau ) % tau );
+		
+		out[blob].mode = BLOB_FUZZY;
+		out[blob].color = RGBA_32( g, g, g, 40 );
+		out[blob].x = p.x;
+		out[blob].y = p.y;
+		out[blob].scale_x = r;
+		out[blob].scale_y = r;
+		
+		dir.y >>= 1;
+		p = v_addmul( p, dir, step_length );
+		r -= prng_next() % REALF( 0.5 );
+	}
+}
+
+void generate_clouds( void )
+{
+	if ( ! DRAW_CLOUDS )
+		return;
+	#if 1
+	GfxBlob *blobs = cloud_blobs;
+	unsigned blobs_left = NUM_CLOUD_BLOBS;
+	
+	do {
+		/* s:
+		when value is small there will be lots of small and fragmented clouds
+		when value is large there will be only few clouds but they are BIG!
+		*/
+		unsigned s = MIN( blobs_left, 30 + prng_next() % 20 );
+		
+		generate_one_cloud( blobs, s );
+		blobs += s;
+		blobs_left -= s;
+	} while( blobs_left );
+	#else
+	generate_one_cloud( cloud_blobs, NUM_CLOUD_BLOBS );
+	#endif
+}
+
+
 static Color lerp( Color a, Color b, float t )
 {
 	Color c;
@@ -27,6 +91,21 @@ static Color lerp( Color a, Color b, float t )
 	c.g = a.g + ( b.g - a.g ) * t;
 	c.b = a.b + ( b.b - a.b ) * t;
 	return c;
+}
+
+typedef U32 Pixel;
+Pixel AlphaBlendPixels(Pixel p1, Pixel p2)
+{
+    static const int AMASK = 0xFF000000;
+    static const int RBMASK = 0x00FF00FF;
+    static const int GMASK = 0x0000FF00;
+    static const int AGMASK = AMASK | GMASK;
+    static const int ONEALPHA = 0x01000000;
+    unsigned int a = (p2 & AMASK) >> 24;
+    unsigned int na = 255 - a;
+    unsigned int rb = ((na * (p1 & RBMASK)) + (a * (p2 & RBMASK))) >> 8;
+    unsigned int ag = (na * ((p1 & AGMASK) >> 8)) + (a * (ONEALPHA | ((p2 & GMASK) >> 8)));
+    return ((rb & RBMASK) | (ag & AGMASK));
 }
 
 static Color unpack( U32 x )
@@ -134,8 +213,10 @@ static void draw_bg( void )
 		dst += skip;
 	}
 
-	hline_w( t0, pack( c1 ) );
-	hline_w( t1, pack( c0 ) );
+	if ( 0 ) {
+		hline_w( t0, pack( c1 ) );
+		hline_w( t1, pack( c0 ) );
+	}
 }
 
 void draw_water( void )
@@ -159,7 +240,7 @@ void draw_water( void )
 			U32 i = u >> u_prec;
 			U32 j = i%m;
 			Real *z = WORLD.water.z;
-			#if 0
+			#if 1
 			// triangle shaped waves
 			DReal f = REAL_FRACT_PART( u >> u_prec - REAL_FRACT_BITS );
 			Real l = z[j];
@@ -491,10 +572,24 @@ void draw_blob( const GfxBlob blob[1] )
 	draw_circle( x, y, r0, r1, blob->color, 256 );
 }
 
-void draw_blobs( unsigned num_blobs, const GfxBlob blobs[] )
+static int cmp_blob( const void *a0, const void *b0 )
 {
-	unsigned i;
-	for( i=0; i<num_blobs; ++i )
+	const GfxBlob *a=a0, *b=b0;
+	S32 dx = abs( b->x - a->x );
+	S32 dy = abs( b->y - a->y );
+	S32 d = MAX( dx, dy );
+	S32 ar = a->scale_x;
+	S32 br = b->scale_x;
+	if ( d < (ar+br>>1) ) return 0; // don't sort overlapping blobs
+	return a->y < b->y ? -1 : ( b->y > a->y );
+}
+
+void draw_blobs( unsigned num_blobs, GfxBlob blobs[] )
+{
+	// cache coherency improvement
+	qsort( blobs, num_blobs, sizeof(blobs[0]), cmp_blob );
+
+	for( unsigned i=0; i<num_blobs; ++i )
 		draw_blob( blobs+i );
 }
 
@@ -650,14 +745,13 @@ static void render_world_fg( void )
 			ms_translate_r( x, y, 0 );
 			{
 				ms_push();
-				//if ( t == WORLD.player ) ms_scale( 8, 8, 8 );
 				ms_rotate( 2, REALTOF( yaw ) );
 				{
 					ms_push();
 					{
 						ms_rotate( 0, REALTOF( roll ) );
 						push_model_mat( mdl );
-						draw_xyz_axis( ms_cur, 3, 4 );
+						//draw_xyz_axis( ms_cur, 3, 4 );
 					}
 					ms_pop();
 					
@@ -697,7 +791,19 @@ static void render_world_fg( void )
 	draw_blobs( num_blobs, blobs );
 	
 	#if DRAW_CLOUDS
-	draw_blobs( NUM_CLOUD_BLOBS, cloud_blobs );
+	num_blobs=0;
+	for( int i=0; i<NUM_CLOUD_BLOBS; ++i ) {
+		GfxBlob *b = cloud_blobs + i;
+		Real x = get_draw_x( b->x );
+		if ( abs(x) < REALF( HORZ_VIEW_RANGE/2.0 ) + (b->scale_x>>1) ) {
+			GfxBlob b1 = *b;
+			b1.x = x;
+			b1.y = get_draw_y( b->y );
+			blobs[num_blobs++] = b1;
+			ASSERT( num_blobs <= MAX_BLOBS );
+		}
+	}
+	draw_blobs( num_blobs, blobs );
 	#endif
 }
 
@@ -713,47 +819,29 @@ void render( void )
 	draw_bg();
 	draw_water();
 
-	hline_w( REALTOF( eye_y ), 0xe0e0e0 );
-	vline_w( REALTOF( eye_x ), 0xe0e0e0 );
-	hline_w( 0, 0x808080 );
-	vline_w( 0, 0x808080 );
-	//hline_w( W_WATER_LEVEL, 0xFF0000 );
-	hline_w( W_WATER_LEVEL + W_WATER_DEPTH, 0x7F0000 );
-	hline_w( W_WATER_DEATH_LEVEL, 0x1F003F );
-	hline_w( W_WATER_LEVEL + W_HEIGHT, 0x1f0000 );
-
-	#if 0
-	#define COORD_SCALE 1
-	#define P_SCREEN_RATIO (r_resy/(float)r_resx)
-	#define W (HORZ_VIEW_RANGE)
-	#define P_RIGHT (W/2.0)
-	#define P_LEFT -P_RIGHT
-	#define P_BOTTOM ( P_SCREEN_RATIO * W / 2.0 )
-	#define P_TOP -P_BOTTOM
-	#define P_NEAR -128.0
-	#define P_FAR 128.0
-	float prj[] = {
-		2.0 / ( P_RIGHT - P_LEFT ) * COORD_SCALE, 0, 0, 0,
-	0, 2.0 / ( P_TOP - P_BOTTOM ) * COORD_SCALE, 0, 0,
-	0, 0, -1.0 / ( P_FAR - P_NEAR ) * COORD_SCALE, 0,
-	-( P_RIGHT + P_LEFT ) / ( P_RIGHT - P_LEFT ), -( P_TOP + P_BOTTOM ) / ( P_TOP - P_BOTTOM ), -P_NEAR / ( P_FAR - P_NEAR ), 1
-	};
-	float scl[16], tr[16];
-	m_translate( tr, 0, 0, 0 );
-	m_scale( scl, view_scale, view_scale, 1 );
-	m_copy( the_view_mat, tr );
-	//m_mult( the_view_mat, tr, scl );
-	#endif
+	if ( 0 ) {
+		hline_w( REALTOF( eye_y ), 0xe0e0e0 );
+		vline_w( REALTOF( eye_x ), 0xe0e0e0 );
+	}
+	if ( 1 ) {
+		hline_w( 0, 0x808080 );
+		vline_w( 0, 0x808080 );
+	}
+	if ( 0 ) {
+		//hline_w( W_WATER_LEVEL, 0xFF0000 );
+		hline_w( W_WATER_LEVEL + W_WATER_DEPTH, 0x7F0000 );
+		hline_w( W_WATER_DEATH_LEVEL, 0x1F003F );
+		hline_w( MAX_AIRCRAFT_ALTITUDE, 0x1f0000 );
+	}
 
 	ms_push();
 	ms_translate( r_resx*0.5f, r_resy*0.5f, 0 );
 	ms_scale( view_scale, view_scale, 1 );
-	//ms_translate_r( -eye_x, -eye_y, 0 );
 	// ms_cur is now the modelview projection matrix (world coords -> pixels)
 
 	render_world_fg();
 
-	if ( 1 ) {
+	if ( 0 ) {
 		float a[3], b[3], c[3];
 		ms_push();
 		ms_translate_r( get_draw_x(0), get_draw_y(0), 0 );
